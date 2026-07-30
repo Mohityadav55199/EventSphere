@@ -29,7 +29,7 @@ const seedDatabase = async () => {
             organizer = await User.create({
                 name: "Demo Organizer",
                 email: "organizer@eventease.com",
-                password: "password123", // Pre-save hook will hash this
+                password: "password123",
                 role: "organizer",
                 walletPoints: 1000
             });
@@ -38,12 +38,12 @@ const seedDatabase = async () => {
             console.log("Found Existing Organizer:", organizer._id);
         }
 
-        // Demo events data
+        // 10 Rich Demo Events Data
         const demoEvents = [
             {
                 title: "Neon Pulse Music Festival 2026",
                 description: "Experience an unbelievable night of electronic beats, neon visual spectacles, and world-renowned DJs performing live under the open sky.",
-                date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+                date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
                 location: "Grand Arena Ground, Downtown City",
                 locationGoogleMapLink: "https://maps.google.com/?q=Grand+Arena+Ground",
                 organizer: organizer._id,
@@ -57,7 +57,7 @@ const seedDatabase = async () => {
             {
                 title: "AI & Future Tech Summit 2026",
                 description: "Join industry leaders, visionaries, and researchers to explore cutting-edge developments in Artificial Intelligence, Neural Networks, and Robotics.",
-                date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+                date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
                 location: "Innovation Hub & Convention Center, Tech Park",
                 locationGoogleMapLink: "https://maps.google.com/?q=Innovation+Hub+Convention+Center",
                 organizer: organizer._id,
@@ -123,11 +123,67 @@ const seedDatabase = async () => {
                 capacity: 150,
                 activeStatus: "active",
                 avgRating: 4.6
+            },
+            {
+                title: "International Gaming & Esports Championship",
+                description: "Cheer for top professional esports teams battling live in Valorant, League of Legends, and Counter-Strike for a $100,000 prize pool.",
+                date: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000),
+                location: "CyberDome Gaming Arena",
+                locationGoogleMapLink: "https://maps.google.com/?q=CyberDome+Gaming+Arena",
+                organizer: organizer._id,
+                image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1000&q=80",
+                Price: 35,
+                category: "Sports",
+                capacity: 800,
+                activeStatus: "active",
+                avgRating: 4.9
+            },
+            {
+                title: "Modern Art & 3D Generative Exhibition",
+                description: "Immerse yourself in interactive digital installations, 3D projection mapping, and contemporary generative art galleries.",
+                date: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
+                location: "Metropolitan Museum of Fine Arts",
+                locationGoogleMapLink: "https://maps.google.com/?q=Metropolitan+Museum",
+                organizer: organizer._id,
+                image: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80",
+                Price: 15,
+                category: "Workshop",
+                capacity: 250,
+                activeStatus: "active",
+                avgRating: 4.8
+            },
+            {
+                title: "Stand-Up Comedy All-Stars Gala",
+                description: "Get ready for non-stop laughter with a star-studded lineup of celebrity comedians performing brand new live material.",
+                date: new Date(Date.now() + 4 * 24 * 60 * 60 * 1000),
+                location: "The Laugh Factory Comedy Club",
+                locationGoogleMapLink: "https://maps.google.com/?q=Laugh+Factory+Comedy+Club",
+                organizer: organizer._id,
+                image: "https://images.unsplash.com/photo-1585699324551-f6c309eedeca?auto=format&fit=crop&w=1000&q=80",
+                Price: 30,
+                category: "Movie",
+                capacity: 180,
+                activeStatus: "active",
+                avgRating: 4.9
+            },
+            {
+                title: "Global Startup Pitch & Founder Networking Night",
+                description: "Connect with venture capitalists, angel investors, and innovative founders over drinks and pitch showcases.",
+                date: new Date(Date.now() + 11 * 24 * 60 * 60 * 1000),
+                location: "Venture Tower Grand Ballroom",
+                locationGoogleMapLink: "https://maps.google.com/?q=Venture+Tower",
+                organizer: organizer._id,
+                image: "https://images.unsplash.com/photo-1515187029135-18ee286d815b?auto=format&fit=crop&w=1000&q=80",
+                Price: 75,
+                category: "Workshop",
+                capacity: 350,
+                activeStatus: "active",
+                avgRating: 5.0
             }
         ];
 
-        // Clear existing demo events or add new ones
-        await Event.deleteMany({ title: { $in: demoEvents.map(e => e.title) } });
+        // Upsert/clear and seed 10 events
+        await Event.deleteMany({});
         const insertedEvents = await Event.insertMany(demoEvents);
 
         console.log(`Successfully seeded ${insertedEvents.length} demo events!`);
