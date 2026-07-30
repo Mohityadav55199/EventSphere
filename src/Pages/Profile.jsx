@@ -217,6 +217,10 @@ function Profile() {
                     {/* Details */}
                     <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
                       <div>
+                        <span className="text-slate-400 block text-[10px]">Pass Type</span>
+                        <span className="font-bold text-indigo-600">{booking.ticketTier || "Standard Pass"}</span>
+                      </div>
+                      <div>
                         <span className="text-slate-400 block text-[10px]">Seats</span>
                         <span className="font-bold text-slate-800">{booking.seatsBooked} Ticket(s)</span>
                       </div>

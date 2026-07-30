@@ -38,7 +38,7 @@ async function generateSecureQRCode(booking) {
 // Stripe Payment Order / Session Creation
 const createOrder = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
-  const { seatsBooked, usePoints, couponCode } = req.body;
+  const { seatsBooked, usePoints, couponCode, ticketTier } = req.body;
 
   if (!eventId || !seatsBooked) {
     throw new ApiError(400, "Event ID and seats booked are required");
@@ -58,7 +58,18 @@ const createOrder = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Not enough seats available");
   }
 
-  const totalPrice = event.Price * seatsBooked;
+  // Calculate tier price
+  let unitPrice = event.Price;
+  let selectedTierName = ticketTier || "Standard Pass";
+  if (event.ticketTypes && event.ticketTypes.length > 0 && ticketTier) {
+    const foundTier = event.ticketTypes.find(t => t.name.toLowerCase() === ticketTier.toLowerCase());
+    if (foundTier) {
+      unitPrice = foundTier.price;
+      selectedTierName = foundTier.name;
+    }
+  }
+
+  const totalPrice = unitPrice * seatsBooked;
 
   const user = await User.findById(req.user._id);
   let discount = 0;
@@ -83,6 +94,8 @@ const createOrder = asyncHandler(async (req, res) => {
       user: req.user._id,
       event: event._id,
       seatsBooked,
+      ticketTier: selectedTierName,
+      ticketPrice: unitPrice,
       stripeSessionId: null,
       stripePaymentIntentId: null,
       amountPaid: 0,
@@ -171,7 +184,7 @@ const createOrder = asyncHandler(async (req, res) => {
 
 // Confirm & Verify Stripe Payment
 const verifyPayment = asyncHandler(async (req, res) => {
-  const { stripe_session_id, razorpay_order_id, razorpay_payment_id, razorpay_signature, eventId, seatsBooked, discount } = req.body;
+  const { stripe_session_id, razorpay_order_id, razorpay_payment_id, razorpay_signature, eventId, seatsBooked, discount, ticketTier, ticketPrice } = req.body;
 
   const sessionId = stripe_session_id || razorpay_order_id;
   if (!sessionId || !eventId || !seatsBooked) {
@@ -195,13 +208,15 @@ const verifyPayment = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Not enough seats available");
   }
 
-  const amountPaid = event.Price * seatsBooked - (discount || 0);
-  console.log("Amount Paid:", event.Price * seatsBooked, "Discount:", discount, "Final Amount:", amountPaid);
+  const basePrice = ticketPrice || event.Price;
+  const amountPaid = Math.max(0, basePrice * seatsBooked - (discount || 0));
 
   let booking = await Booking.create({
     user: req.user._id,
     event: event._id,
     seatsBooked,
+    ticketTier: ticketTier || "Standard Pass",
+    ticketPrice: basePrice,
     stripeSessionId: sessionId,
     stripePaymentIntentId: razorpay_payment_id || `pi_${sessionId}`,
     amountPaid,

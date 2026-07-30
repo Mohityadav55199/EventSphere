@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { useSearch } from "../../Context/SearchContext";
 import { getAllEvents } from "../../services/eventservices/eventapi";
 import SearchEvents from "./SearchEvents";
+import ThemeToggle from "../ThemeToggle";
 
 export default function Header() {
   const { accessToken, user } = useSelector((state) => state.auth);
@@ -79,10 +80,9 @@ export default function Header() {
             />
           </div>
           <SearchEvents />
-        </div>
-
         {/* Right Section / Auth Controls */}
         <div className="hidden md:flex items-center space-x-3 shrink-0">
+          <ThemeToggle />
           {!isLoggedIn ? (
             <div className="flex items-center space-x-2">
               <Link

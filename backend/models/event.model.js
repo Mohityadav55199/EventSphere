@@ -54,6 +54,13 @@ const eventSchema = new Schema({
         required: [true, "Price is required"],
         min: [0, "Price cannot be negative"],
     },
+    ticketTypes: [
+        {
+            name: { type: String, default: "Standard Pass" },
+            price: { type: Number, required: true },
+            description: { type: String, default: "General Admission Pass" }
+        }
+    ],
     category: {
         type: String,
          enum : [ "Movie", "Music", "Workshop", "Sports", "Other"],

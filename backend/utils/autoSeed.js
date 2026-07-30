@@ -6,7 +6,7 @@ export const autoSeedEventsIfEmpty = async () => {
         const count = await Event.countDocuments();
         if (count > 0) return;
 
-        console.log("No events found in DB. Auto-seeding 10 demo events with Rupee (₹) pricing...");
+        console.log("No events found in DB. Auto-seeding 10 demo events with Tiered Ticket Passes & Rupee (₹) pricing...");
 
         let organizer = await User.findOne({ email: "organizer@eventease.com" });
         if (!organizer) {
@@ -29,6 +29,11 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1000&q=80",
                 Price: 499,
+                ticketTypes: [
+                    { name: "Early Bird Pass", price: 399, description: "Discounted entry for early adopters" },
+                    { name: "Standard Pass", price: 499, description: "General venue admission" },
+                    { name: "VIP Lounge Pass", price: 999, description: "Front stage access & complimentary drinks" }
+                ],
                 category: "Music",
                 capacity: 500,
                 activeStatus: "active",
@@ -43,6 +48,10 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1000&q=80",
                 Price: 999,
+                ticketTypes: [
+                    { name: "Standard Pass", price: 999, description: "Keynote & main hall access" },
+                    { name: "Executive VIP Pass", price: 1999, description: "Networking dinner & speaker lounge" }
+                ],
                 category: "Workshop",
                 capacity: 300,
                 activeStatus: "active",
@@ -57,6 +66,10 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1000&q=80",
                 Price: 250,
+                ticketTypes: [
+                    { name: "Standard IMAX Seat", price: 250, description: "Standard IMAX 3D entry" },
+                    { name: "Recliner VIP Seat", price: 450, description: "Plush recliner with popcorn combo" }
+                ],
                 category: "Movie",
                 capacity: 200,
                 activeStatus: "active",
@@ -71,6 +84,10 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=1000&q=80",
                 Price: 650,
+                ticketTypes: [
+                    { name: "Galleria Seat", price: 650, description: "Upper deck seating" },
+                    { name: "Courtside VIP Seat", price: 1499, description: "Direct courtside row 1 seating" }
+                ],
                 category: "Sports",
                 capacity: 1000,
                 activeStatus: "active",
@@ -85,6 +102,9 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1000&q=80",
                 Price: 1200,
+                ticketTypes: [
+                    { name: "Masterclass Pass", price: 1200, description: "Live tasting & cooking workshop" }
+                ],
                 category: "Workshop",
                 capacity: 80,
                 activeStatus: "active",
@@ -99,6 +119,9 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1000&q=80",
                 Price: 199,
+                ticketTypes: [
+                    { name: "General Admission", price: 199, description: "Campfire lawn entry" }
+                ],
                 category: "Music",
                 capacity: 150,
                 activeStatus: "active",
@@ -113,6 +136,10 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1000&q=80",
                 Price: 350,
+                ticketTypes: [
+                    { name: "Gamer Pass", price: 350, description: "Arena seating" },
+                    { name: "Pro VIP Gamer Pass", price: 799, description: "Meet & greet + goodie bag" }
+                ],
                 category: "Sports",
                 capacity: 800,
                 activeStatus: "active",
@@ -127,6 +154,9 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80",
                 Price: 149,
+                ticketTypes: [
+                    { name: "Gallery Day Pass", price: 149, description: "Access to all exhibit halls" }
+                ],
                 category: "Workshop",
                 capacity: 250,
                 activeStatus: "active",
@@ -141,6 +171,10 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1585699324551-f6c309eedeca?auto=format&fit=crop&w=1000&q=80",
                 Price: 299,
+                ticketTypes: [
+                    { name: "Laughter Pass", price: 299, description: "Standard club seating" },
+                    { name: "Front Row VIP", price: 599, description: "Front row seating + drink voucher" }
+                ],
                 category: "Movie",
                 capacity: 180,
                 activeStatus: "active",
@@ -155,6 +189,9 @@ export const autoSeedEventsIfEmpty = async () => {
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1515187029135-18ee286d815b?auto=format&fit=crop&w=1000&q=80",
                 Price: 750,
+                ticketTypes: [
+                    { name: "Founder Pass", price: 750, description: "Networking & pitch lounge entry" }
+                ],
                 category: "Workshop",
                 capacity: 350,
                 activeStatus: "active",
@@ -163,7 +200,7 @@ export const autoSeedEventsIfEmpty = async () => {
         ];
 
         await Event.insertMany(demoEvents);
-        console.log("Auto-seeded 10 demo events with INR pricing successfully!");
+        console.log("Auto-seeded 10 demo events with Tiered Passes & INR pricing successfully!");
     } catch (err) {
         console.error("Auto-seeding error:", err);
     }

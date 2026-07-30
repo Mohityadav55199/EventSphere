@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteEventbyAdmin, getEventById } from "../services/eventservices/eventapi";
-import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles } from "lucide-react";
+import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2 } from "lucide-react";
 import { createOrder, verifyPayment } from "../services/bookingservices/bookingapi";
 import { useSelector } from "react-redux";
 import { toast, ToastContainer } from "react-toastify";
@@ -19,6 +19,7 @@ function DetailEvent() {
   const [seats, setSeats] = useState(1);
   const [usePoints, setUsePoints] = useState(false);
   const [couponCode, setCouponCode] = useState("");
+  const [selectedTier, setSelectedTier] = useState(null);
   const user = useSelector((state) => state.auth.user);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -28,13 +29,20 @@ function DetailEvent() {
     const fetchEvent = async () => {
       try {
         const response = await getEventById(id);
-        setEvent(response.data);
-        const totalFilledSeats = (response.data.attendees || []).reduce(
+        const evData = response.data;
+        setEvent(evData);
+        
+        const tiers = evData?.ticketTypes?.length > 0
+          ? evData.ticketTypes
+          : [{ name: "Standard Pass", price: evData.Price, description: "General Admission Entry" }];
+        setSelectedTier(tiers[0]);
+
+        const totalFilledSeats = (evData.attendees || []).reduce(
           (acc, attendee) => acc + (attendee.ticketsBooked || 1),
           0
         );
-        setAvailableSeats(response.data.capacity - totalFilledSeats);
-        if (response.data.capacity > totalFilledSeats && (response.data.status === "upcoming" || response.data.status === "ongoing" || response.data.activeStatus === "active")) {
+        setAvailableSeats(evData.capacity - totalFilledSeats);
+        if (evData.capacity > totalFilledSeats && (evData.status === "upcoming" || evData.status === "ongoing" || evData.activeStatus === "active")) {
           setBookingAvailable(true);
         }
       } catch (err) {
@@ -53,7 +61,12 @@ function DetailEvent() {
         navigate("/login");
         return;
       }
-      const orderResponse = await createOrder(id, { seatsBooked: seats, usePoints, couponCode });
+      const orderResponse = await createOrder(id, {
+        seatsBooked: seats,
+        usePoints,
+        couponCode,
+        ticketTier: selectedTier?.name,
+      });
 
       if (!orderResponse) {
         toast.error("Booking error. Please check login status.");
@@ -72,11 +85,13 @@ function DetailEvent() {
         return;
       }
 
-      const verifyResponse = await verifyPayment({
+      await verifyPayment({
         stripe_session_id: orderResponse.data.stripeSessionId || orderResponse.data.orderId,
         eventId: id,
         seatsBooked: seats,
         discount: orderResponse.data.discount || 0,
+        ticketTier: selectedTier?.name,
+        ticketPrice: selectedTier?.price || event.Price,
       });
       toast.success("Stripe Payment Successful & Booking Confirmed!");
       setOpen(false);
@@ -102,6 +117,10 @@ function DetailEvent() {
   if (error) {
     return <div className="text-red-500 text-center mt-10 bg-slate-50 p-4">{error}</div>;
   }
+
+  const availableTiers = event?.ticketTypes?.length > 0
+    ? event.ticketTypes
+    : [{ name: "Standard Pass", price: event?.Price, description: "General Admission Pass" }];
 
   return (
     <div className="bg-slate-50 min-h-screen p-4 sm:p-8 text-slate-800">
@@ -153,6 +172,35 @@ function DetailEvent() {
             </div>
           </div>
 
+          {/* Tiered Ticket Selection Cards */}
+          <div className="space-y-3 pt-2 border-t border-slate-100">
+            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider text-xs">Select Ticket Tier / Pass</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {availableTiers.map((tier) => (
+                <div
+                  key={tier.name}
+                  onClick={() => setSelectedTier(tier)}
+                  className={`p-4 rounded-2xl border cursor-pointer transition-all duration-200 flex flex-col justify-between space-y-2 relative ${
+                    selectedTier?.name === tier.name
+                      ? "bg-indigo-50/80 border-indigo-500 shadow-md ring-2 ring-indigo-200"
+                      : "bg-slate-50 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {selectedTier?.name === tier.name && (
+                    <CheckCircle2 className="w-4 h-4 text-indigo-600 absolute top-3 right-3" />
+                  )}
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-900">{tier.name}</h4>
+                    <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{tier.description || "Admission pass"}</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-200/60">
+                    <span className="text-lg font-black text-indigo-600">₹{tier.price}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Description */}
           <div className="space-y-2 pt-2 border-t border-slate-100">
             <h3 className="text-base font-bold text-slate-900">About the Event</h3>
@@ -164,8 +212,8 @@ function DetailEvent() {
           {/* Footer Bar: Price & Book Button */}
           <div className="flex items-center justify-between pt-4 border-t border-slate-100">
             <div>
-              <span className="text-xs text-slate-400 block">Ticket Price</span>
-              <span className="text-2xl font-black text-indigo-600">₹{event?.Price}</span>
+              <span className="text-xs text-slate-400 block">Selected Tier ({selectedTier?.name || "Pass"})</span>
+              <span className="text-2xl font-black text-indigo-600">₹{selectedTier?.price || event?.Price}</span>
             </div>
 
             <div className="flex gap-3">
@@ -218,8 +266,17 @@ function DetailEvent() {
         <div className="fixed inset-0 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm z-50 p-4">
           <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 w-full max-w-md border border-slate-200 space-y-4">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-lg font-black text-slate-900">Book Tickets</h2>
+              <h2 className="text-lg font-black text-slate-900">Confirm Ticket Booking</h2>
               <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
+            </div>
+
+            {/* Selected Tier Banner */}
+            <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-indigo-400 block">Selected Tier</span>
+                <span className="text-sm font-extrabold text-indigo-900">{selectedTier?.name || "Standard Pass"}</span>
+              </div>
+              <span className="text-base font-black text-indigo-600">₹{selectedTier?.price || event?.Price}</span>
             </div>
 
             {/* Ticket Quantity */}
@@ -269,8 +326,8 @@ function DetailEvent() {
 
             {/* Total Estimated Price */}
             <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-medium">Subtotal</span>
-              <span className="text-lg font-black text-slate-900">₹{event?.Price * seats}</span>
+              <span className="text-xs text-slate-500 font-medium">Subtotal ({seats} ticket{seats > 1 ? "s" : ""})</span>
+              <span className="text-lg font-black text-slate-900">₹{(selectedTier?.price || event?.Price) * seats}</span>
             </div>
 
             {/* Actions */}

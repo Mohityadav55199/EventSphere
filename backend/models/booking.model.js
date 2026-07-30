@@ -45,6 +45,13 @@ const bookingSchema = new Schema({
     amountPaid: {
         type: Number,
     },
+    ticketTier: {
+        type: String,
+        default: "Standard Pass",
+    },
+    ticketPrice: {
+        type: Number,
+    },
 
     qrCodeData: {
         payload: { type: String}, // bookingId:randomHex
