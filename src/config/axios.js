@@ -5,6 +5,7 @@ import { logout, setCredentials } from "../store/authslice.js";
 
 const API = axios.create({
   baseURL: baseURL,
+  timeout: 30000, // 30s timeout to allow Render free tier instance cold start
 });
 
 // Attach token to requests

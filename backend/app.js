@@ -11,22 +11,14 @@ import contactRouter from "./routes/contact.router.js";
 
 const app = express();
 
-const allowedOrigins = [
-    process.env.CLIENT_URL,
-    "https://event-sphere-lemon-nu.vercel.app",
-    "http://localhost:5173",
-    "http://localhost:3000"
-].filter(Boolean);
-
+// Dynamic CORS configuration allowing credentials for Vercel & localhost
 app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        return callback(null, true);
-    },
+    origin: true,
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
 }));
+
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
 app.use(express.static("Public"));
