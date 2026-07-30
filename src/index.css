@@ -1,0 +1,4 @@
+@import "tailwindcss";
+body{
+   @apply  bg-gradient-to-r from-black via-blue-800 to-black shadow-lg
+}
