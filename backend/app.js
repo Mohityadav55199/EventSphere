@@ -8,9 +8,20 @@ import bookingRouter from "./routes/booking.router.js";
 import reviewRouter from "./routes/review.router.js";
 import chatRouter from "./routes/chat.router.js";
 import contactRouter from "./routes/contact.router.js";
-const app = express();
+const allowedOrigins = [
+    process.env.CLIENT_URL,
+    "https://event-sphere-lemon-nu.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:3000"
+].filter(Boolean);
+
 app.use(cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(null, true);
+    },
     credentials: true,
 }));
 app.use(express.json({limit : "16kb"}));
