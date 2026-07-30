@@ -3,20 +3,25 @@ import dotenv from "dotenv";
 import app from "./app.js";
 import { initSocket } from "./socket.js";
 import http from "http";
+import { autoSeedEventsIfEmpty } from "./utils/autoSeed.js";
+
 dotenv.config({
   path: "./.env",
-})
+});
 
 connectDB()
-.then(()=>{
-    const port = process.env.PORT || 6000
-    const server = http.createServer(app); // Create HTTP server & attach Express app
-    initSocket(server); // Initialize socket.io with the server
-    server.listen(port,()=>{
-      console.log("server is started and running at port",port)
-      console.log("server is running at http://localhost:" + port)
-    })
+.then(async () => {
+    // Automatically seed events if database is empty (e.g. fresh MongoDB Atlas deployment)
+    await autoSeedEventsIfEmpty();
+
+    const port = process.env.PORT || 5000;
+    const server = http.createServer(app);
+    initSocket(server);
+    server.listen(port, () => {
+      console.log("Server is started and running at port", port);
+      console.log("Server is running at http://localhost:" + port);
+    });
 })
-.catch((err)=>{
-  console.log("MongoDB Connection failed!!!",err)
-})
+.catch((err) => {
+  console.log("MongoDB Connection failed!!!", err);
+});
