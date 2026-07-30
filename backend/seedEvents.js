@@ -8,10 +8,20 @@ dotenv.config({ path: "./.env" });
 
 const seedDatabase = async () => {
     try {
-        const mongoUri = `${process.env.MONGODB_URI || "mongodb://localhost:27017"}/${DB_NAME}`;
+        const rawUri = process.env.MONGODB_URI || process.env.MONGO_URI || "mongodb://localhost:27017";
+        let mongoUri = rawUri;
+        if (!rawUri.includes(`/${DB_NAME}`)) {
+            mongoUri = rawUri.includes("?") ? rawUri.replace("?", `/${DB_NAME}?`) : `${rawUri.replace(/\/$/, "")}/${DB_NAME}`;
+        }
         console.log(`Connecting to MongoDB at ${mongoUri}...`);
-        await mongoose.connect(mongoUri);
-        console.log("MongoDB Connected Successfully!");
+        try {
+            await mongoose.connect(mongoUri);
+            console.log("MongoDB Connected Successfully!");
+        } catch (err) {
+            console.warn(`Atlas connection failed (${err.message}). Connecting to local MongoDB...`);
+            await mongoose.connect(`mongodb://localhost:27017/${DB_NAME}`);
+            console.log("Connected to Local MongoDB Successfully!");
+        }
 
         // Find or create a demo organizer user
         let organizer = await User.findOne({ email: "organizer@eventease.com" });
