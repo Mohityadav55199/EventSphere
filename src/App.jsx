@@ -5,14 +5,12 @@ import Header from "./Components/Header/Header";
 import Footer from "./Components/Footer/Footer";
 import { getUserProfile } from "./services/authservices/authapi";
 import { logout, setCredentials } from "./store/authslice";
-import EventList from "./Components/Header/SearchEvents";
 import ScrollToTop from "./ScrollToTop";
 
 function App() {
   const [loading, setLoading] = useState(true);
   const dispatch = useDispatch();
   const accessToken = useSelector((state) => state.auth.accessToken);
-
 
   useEffect(() => {
     const token = accessToken || localStorage.getItem("accessToken");
@@ -28,7 +26,7 @@ function App() {
         if (userData) {
           dispatch(
             setCredentials({
-              user: userData, // ✅ correctly set user object
+              user: userData,
               accessToken: token,
             })
           );
@@ -43,20 +41,20 @@ function App() {
       .finally(() => setLoading(false));
   }, [accessToken, dispatch]);
 
-
   return !loading ? (
-    <div className="min-h-screen flex flex-wrap content-between bg-gradieent-to r from-black via-blue-800 to-black">
-      <div className="w-full">
-        <Header/>
-        <ScrollToTop />
-        <EventList />
-        <main>
-          <Outlet />
-        </main>
-        <Footer />
-      </div>
+    <div className="min-h-screen flex flex-col justify-between bg-slate-50 text-slate-800">
+      <Header />
+      <ScrollToTop />
+      <main className="flex-1">
+        <Outlet />
+      </main>
+      <Footer />
     </div>
-  ) : null;
+  ) : (
+    <div className="min-h-screen flex justify-center items-center bg-slate-50 text-slate-500 font-medium">
+      Initializing EventSphere...
+    </div>
+  );
 }
 
 export default App;

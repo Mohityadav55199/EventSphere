@@ -6,7 +6,7 @@ export const autoSeedEventsIfEmpty = async () => {
         const count = await Event.countDocuments();
         if (count > 0) return;
 
-        console.log("No events found in DB. Auto-seeding 10 demo events...");
+        console.log("No events found in DB. Auto-seeding 10 demo events with Rupee (₹) pricing...");
 
         let organizer = await User.findOne({ email: "organizer@eventease.com" });
         if (!organizer) {
@@ -28,7 +28,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=Grand+Arena+Ground",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1470225620780-dba8ba36b745?auto=format&fit=crop&w=1000&q=80",
-                Price: 49,
+                Price: 499,
                 category: "Music",
                 capacity: 500,
                 activeStatus: "active",
@@ -42,7 +42,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=Innovation+Hub+Convention+Center",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1000&q=80",
-                Price: 99,
+                Price: 999,
                 category: "Workshop",
                 capacity: 300,
                 activeStatus: "active",
@@ -56,7 +56,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=CineMax+Grand+Theater",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1000&q=80",
-                Price: 25,
+                Price: 250,
                 category: "Movie",
                 capacity: 200,
                 activeStatus: "active",
@@ -70,7 +70,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=National+Sports+Complex",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=1000&q=80",
-                Price: 65,
+                Price: 650,
                 category: "Sports",
                 capacity: 1000,
                 activeStatus: "active",
@@ -84,7 +84,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=Skyline+Lounge",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1000&q=80",
-                Price: 120,
+                Price: 1200,
                 category: "Workshop",
                 capacity: 80,
                 activeStatus: "active",
@@ -98,7 +98,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=Lakeside+Amphitheater",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1000&q=80",
-                Price: 20,
+                Price: 199,
                 category: "Music",
                 capacity: 150,
                 activeStatus: "active",
@@ -106,13 +106,13 @@ export const autoSeedEventsIfEmpty = async () => {
             },
             {
                 title: "International Gaming & Esports Championship",
-                description: "Cheer for top professional esports teams battling live in Valorant, League of Legends, and Counter-Strike for a $100,000 prize pool.",
+                description: "Cheer for top professional esports teams battling live in Valorant, League of Legends, and Counter-Strike for a ₹5,00,000 prize pool.",
                 date: new Date(Date.now() + 8 * 24 * 60 * 60 * 1000),
                 location: "CyberDome Gaming Arena",
                 locationGoogleMapLink: "https://maps.google.com/?q=CyberDome+Gaming+Arena",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1000&q=80",
-                Price: 35,
+                Price: 350,
                 category: "Sports",
                 capacity: 800,
                 activeStatus: "active",
@@ -126,7 +126,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=Metropolitan+Museum",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80",
-                Price: 15,
+                Price: 149,
                 category: "Workshop",
                 capacity: 250,
                 activeStatus: "active",
@@ -140,7 +140,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=Laugh+Factory+Comedy+Club",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1585699324551-f6c309eedeca?auto=format&fit=crop&w=1000&q=80",
-                Price: 30,
+                Price: 299,
                 category: "Movie",
                 capacity: 180,
                 activeStatus: "active",
@@ -154,7 +154,7 @@ export const autoSeedEventsIfEmpty = async () => {
                 locationGoogleMapLink: "https://maps.google.com/?q=Venture+Tower",
                 organizer: organizer._id,
                 image: "https://images.unsplash.com/photo-1515187029135-18ee286d815b?auto=format&fit=crop&w=1000&q=80",
-                Price: 75,
+                Price: 750,
                 category: "Workshop",
                 capacity: 350,
                 activeStatus: "active",
@@ -163,7 +163,7 @@ export const autoSeedEventsIfEmpty = async () => {
         ];
 
         await Event.insertMany(demoEvents);
-        console.log("Auto-seeded 10 demo events successfully!");
+        console.log("Auto-seeded 10 demo events with INR pricing successfully!");
     } catch (err) {
         console.error("Auto-seeding error:", err);
     }

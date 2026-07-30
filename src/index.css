@@ -1,4 +1,10 @@
 @import "tailwindcss";
-body{
-   @apply  bg-gradient-to-r from-black via-blue-800 to-black shadow-lg
+
+body {
+  @apply bg-slate-50 text-slate-800 antialiased font-sans min-h-screen selection:bg-indigo-500 selection:text-white;
+}
+
+/* Glassmorphism utility helpers */
+.glass-panel {
+  @apply bg-white/90 backdrop-blur-xl border border-slate-200/80 shadow-md;
 }

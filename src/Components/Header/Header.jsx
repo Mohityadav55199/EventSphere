@@ -1,19 +1,19 @@
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { LogoutBtn } from "./LogoutBtn";
 import { useSelector } from "react-redux";
-import {  Wallet } from "lucide-react";
+import { Wallet, Menu, X, Search, Sparkles } from "lucide-react";
 import { IconUser } from "@tabler/icons-react";
 import { useState, useEffect } from "react";
 import { useSearch } from "../../Context/SearchContext";
 import { getAllEvents } from "../../services/eventservices/eventapi";
-import { Menu, X } from "lucide-react";
+import SearchEvents from "./SearchEvents";
 
 export default function Header() {
   const { accessToken, user } = useSelector((state) => state.auth);
   const isLoggedIn = Boolean(accessToken);
   const isAuthorised = user?.role === "admin" || user?.role === "organizer";
   const { searchQuery, setSearchQuery, setFilteredEvents } = useSearch();
-  const location = useLocation()
+  const location = useLocation();
 
   const [events, setEvents] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -44,215 +44,185 @@ export default function Header() {
       (event) =>
         event.title.toLowerCase().includes(value) ||
         event.description.toLowerCase().includes(value) ||
+        (event.category && event.category.toLowerCase().includes(value)) ||
         event.location.toLowerCase().includes(value)
     );
     setFilteredEvents(filtered);
   };
-    useEffect(() => {
+
+  useEffect(() => {
     setSearchQuery("");
     setFilteredEvents([]);
   }, [location.pathname]);
 
   return (
-    <header className="w-full bg-gradient-to-r from-black via-blue-800 to-black shadow-lg">
-      <div className="max-w-7xl mx-auto px-6 py-4 flex lg:items-center lg:justify-between justify-evenly">
-        {/* Logo */}
-        <Link to="/" className="text-white mt-2 lg:mt-0 lg:text-2xl text-lg font-bold tracking-wide">
-          Event<span className="text-yellow-300">Sphere</span>
+    <header className="sticky top-0 z-50 w-full bg-white/85 backdrop-blur-xl border-b border-slate-200/80 shadow-sm transition-all">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+        {/* Brand Logo */}
+        <Link to="/" className="flex items-center gap-2 text-xl sm:text-2xl font-black text-slate-900 tracking-tight shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-200">
+            <Sparkles className="w-5 h-5 fill-white" />
+          </div>
+          <span>Event<span className="text-indigo-600">Sphere</span></span>
         </Link>
 
-                {/* Desktop Search */}
-        <div className=" md:flex  flex-grow md:ml-56">
-          <input
-            type="text"
-            placeholder="Search events..."
-            className="lg:w-full -mb-4 lg:mb-0 lg:mr-36 w-[90%] mx-3 lg:h-12 h-10 border-2 px-4 py-2 rounded-full focus:outline-none shadow text-slate-400"
-            value={searchQuery}
-            onChange={handleSearch}
-          />
-           </div>
+        {/* Search Bar Container with Live Autocomplete Dropdown */}
+        <div className="relative flex-1 max-w-lg hidden sm:block mx-4">
+          <div className="relative flex items-center">
+            <Search className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input
+              type="text"
+              placeholder="Search events, categories, locations..."
+              className="w-full pl-10 pr-4 py-2 bg-slate-100/90 hover:bg-slate-100 focus:bg-white text-slate-800 text-sm rounded-full border border-slate-200/80 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition-all outline-none"
+              value={searchQuery}
+              onChange={handleSearch}
+            />
+          </div>
+          <SearchEvents />
+        </div>
+
+        {/* Right Section / Auth Controls */}
+        <div className="hidden md:flex items-center space-x-3 shrink-0">
+          {!isLoggedIn ? (
+            <div className="flex items-center space-x-2">
+              <Link
+                to="/login"
+                className="px-4 py-2 text-sm font-semibold text-slate-700 hover:text-indigo-600 rounded-full transition"
+              >
+                Login
+              </Link>
+              <Link
+                to="/signup"
+                className="px-4 py-2 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-full shadow-md shadow-indigo-200 transition"
+              >
+                Join Now
+              </Link>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-full text-xs font-bold">
+                <Wallet className="w-4 h-4 text-indigo-600" />
+                <span>{user?.walletPoints ?? 0} pts</span>
+              </div>
+              <Link to="/profile" className="p-2 text-slate-600 hover:text-indigo-600 rounded-full hover:bg-slate-100 transition" title="Profile">
+                <IconUser className="w-6 h-6" />
+              </Link>
+              <LogoutBtn />
+            </>
+          )}
+        </div>
 
         {/* Mobile Hamburger */}
         <button
-          className="md:hidden text-white  text-2xl"
+          className="md:hidden p-2 text-slate-700 hover:text-indigo-600 rounded-lg"
           onClick={() => setMenuOpen(!menuOpen)}
         >
-          {menuOpen ? <X size={28} /> : <Menu size={30} className=" mx-4" />}
+          {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
-
-
-       
-
-        {/* Right Section (Desktop) */}
-        <div className="hidden md:flex items-center space-x-6">
-          {!isLoggedIn ? (
-            <div className="flex space-x-4">
-              <Link
-                to="/login"
-                className="px-4 py-2 bg-white text-purple-700 rounded-full font-semibold shadow hover:bg-yellow-300 hover:text-black transition"
-              >
-                Login
-              </Link>
-              <Link
-                to="/signup"
-                className="px-4 py-2 bg-yellow-300 text-black rounded-full font-semibold shadow hover:bg-white hover:text-purple-700 transition"
-              >
-                Join Now
-              </Link>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center space-x-2 px-4 py-2 hover:bg-white bg-white rounded-full shadow">
-                <Wallet className="text-purple-700 text-xl font-semibold" />
-                <span className="font-semibold text-black">
-                  {user?.walletPoints ?? 0} pts
-                </span>
-              </div>
-              <LogoutBtn />
-              <Link to="/profile" className="flex items-center">
-                <IconUser className="text-white text-3xl hover:text-yellow-300 transition" />
-              </Link>
-            </>
-          )}
-        </div>
       </div>
 
-      {/* Desktop Nav */}
-      <nav className="hidden md:flex max-w-7xl mx-auto px-6 py-4 items-center space-x-8 text-white font-medium">
-        <div className="flex items-center space-x-8">
-          <NavLink
-            to="/"
-            className={({ isActive }) =>
-              `block py-2 duration-200 ${
-                isActive ? "text-yellow-300" : "text-white"
-              } hover:text-yellow-300`
-            }
-          >
-            Home
-          </NavLink>
-          <NavLink
-            to="/events"
-            className={({ isActive }) =>
-              `block py-2 duration-200 ${
-                isActive ? "text-yellow-300" : "text-white"
-              } hover:text-yellow-300`
-            }
-          >
-            Events
-          </NavLink>
-          <NavLink
-            to="/contact"
-            className={({ isActive }) =>
-              `block py-2 duration-200 ${
-                isActive ? "text-yellow-300" : "text-white"
-              } hover:text-yellow-300`
-            }
-          >
-            Contact Us
-          </NavLink>
-          <NavLink
-            to="/about"
-            className={({ isActive }) =>
-              `block py-2 duration-200 ${
-                isActive ? "text-yellow-300" : "text-white"
-              } hover:text-yellow-300`
-            }
-          >
-            About
-          </NavLink>
-        </div>
-
-        {isAuthorised && (
-          <div className="ml-auto flex items-center space-x-6">
+      {/* Navigation Bar (Desktop) */}
+      <div className="hidden md:block border-t border-slate-100/80 bg-slate-50/50">
+        <nav className="max-w-7xl mx-auto px-6 py-2 flex items-center justify-between text-xs font-semibold text-slate-600">
+          <div className="flex items-center space-x-6">
             <NavLink
-              to="/create-event"
+              to="/"
               className={({ isActive }) =>
-                `block py-2 duration-200 ${
-                  isActive ? "text-green-500" : "text-white"
-                } hover:text-green-500`
+                `py-1 transition-colors ${isActive ? "text-indigo-600 font-bold border-b-2 border-indigo-600" : "hover:text-indigo-600"}`
               }
             >
-              Add Event
+              Home
             </NavLink>
             <NavLink
-              to="/dashboard"
+              to="/events"
               className={({ isActive }) =>
-                `block py-2 duration-200 ${
-                  isActive ? "text-green-500" : "text-white"
-                } hover:text-green-500`
+                `py-1 transition-colors ${isActive ? "text-indigo-600 font-bold border-b-2 border-indigo-600" : "hover:text-indigo-600"}`
               }
             >
-              Dashboard
+              Events
+            </NavLink>
+            <NavLink
+              to="/contact"
+              className={({ isActive }) =>
+                `py-1 transition-colors ${isActive ? "text-indigo-600 font-bold border-b-2 border-indigo-600" : "hover:text-indigo-600"}`
+              }
+            >
+              Contact Us
+            </NavLink>
+            <NavLink
+              to="/about"
+              className={({ isActive }) =>
+                `py-1 transition-colors ${isActive ? "text-indigo-600 font-bold border-b-2 border-indigo-600" : "hover:text-indigo-600"}`
+              }
+            >
+              About
             </NavLink>
           </div>
-        )}
-      </nav>
-
-      {/* Mobile Dropdown Menu */}
-      {menuOpen && (
-        <div className="md:hidden bg-black/20  text-white px-6 py-4 space-y-4">
-
-          {/* Mobile Nav Links */}
-          <NavLink to="/" className="block hover:text-yellow-300 " onClick={() => setMenuOpen(false)}>
-          Home
-          </NavLink>
-          <NavLink to="/events" className="block hover:text-yellow-300" onClick={() => setMenuOpen(false)}>
-            Events
-          </NavLink>
-          <NavLink to="/contact" className="block hover:text-yellow-300" onClick={() => setMenuOpen(false)}>
-            Contact Us
-          </NavLink>
-          <NavLink to="/about" className="block hover:text-yellow-300" onClick={() => setMenuOpen(false)}>
-            About
-          </NavLink>
 
           {isAuthorised && (
-            <>
-              <NavLink to="/create-event" className="block hover:text-green-500" onClick={() => setMenuOpen(false)}>
-                Add Event
+            <div className="flex items-center space-x-4">
+              <NavLink
+                to="/create-event"
+                className={({ isActive }) =>
+                  `px-3 py-1 rounded-full text-xs font-semibold ${isActive ? "bg-emerald-100 text-emerald-700" : "text-emerald-600 hover:bg-emerald-50"}`
+                }
+              >
+                + Add Event
               </NavLink>
-              <NavLink to="/dashboard" className="block hover:text-green-500" onClick={() => setMenuOpen(false)}>
+              <NavLink
+                to="/dashboard"
+                className={({ isActive }) =>
+                  `px-3 py-1 rounded-full text-xs font-semibold ${isActive ? "bg-indigo-100 text-indigo-700" : "text-indigo-600 hover:bg-indigo-50"}`
+                }
+              >
                 Dashboard
               </NavLink>
-            </>
+            </div>
           )}
+        </nav>
+      </div>
 
-          {/* Auth Buttons (Mobile) */}
+      {/* Mobile Menu */}
+      {menuOpen && (
+        <div className="md:hidden border-t border-slate-200 bg-white px-6 py-4 space-y-4 shadow-xl">
+          <div className="relative mb-3">
+            <Search className="absolute left-3 w-4 h-4 top-3 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search events..."
+              className="w-full pl-9 pr-4 py-2 bg-slate-100 text-slate-800 text-sm rounded-full outline-none"
+              value={searchQuery}
+              onChange={handleSearch}
+            />
+          </div>
+          <SearchEvents />
+
+          <nav className="flex flex-col space-y-2 text-sm font-medium text-slate-700">
+            <NavLink to="/" className="py-2 hover:text-indigo-600" onClick={() => setMenuOpen(false)}>Home</NavLink>
+            <NavLink to="/events" className="py-2 hover:text-indigo-600" onClick={() => setMenuOpen(false)}>Events</NavLink>
+            <NavLink to="/contact" className="py-2 hover:text-indigo-600" onClick={() => setMenuOpen(false)}>Contact Us</NavLink>
+            <NavLink to="/about" className="py-2 hover:text-indigo-600" onClick={() => setMenuOpen(false)}>About</NavLink>
+
+            {isAuthorised && (
+              <>
+                <NavLink to="/create-event" className="py-2 text-emerald-600 font-semibold" onClick={() => setMenuOpen(false)}>+ Add Event</NavLink>
+                <NavLink to="/dashboard" className="py-2 text-indigo-600 font-semibold" onClick={() => setMenuOpen(false)}>Dashboard</NavLink>
+              </>
+            )}
+          </nav>
+
           {!isLoggedIn ? (
-            <div className="flex flex-col space-y-2">
-              <Link
-                to="/login"
-                className="lg:px-4 lg:py-2 lg:bg-white lg:text-purple-700 text-yellow-300 rounded-full font-semibold shadow lg:hover:bg-yellow-300 lg:hover:text-yellow-300 hover:text-white transition"
-                onClick={() => setMenuOpen(false)}
-              >
-                Login
-              </Link>
-              <Link
-                to="/signup"
-                className="lg:px-4 lg:py-2 lg:bg-yellow-300 lg:text-black text-yellow-300 rounded-full font-semibold shadow lg:hover:bg-white lg:hover:text-purple-700 hover:text-white transition"
-                onClick={() => setMenuOpen(false)}
-              >
-                Join Now
-              </Link>
+            <div className="pt-2 flex flex-col gap-2">
+              <Link to="/login" className="w-full text-center py-2 border border-slate-300 rounded-full font-semibold text-slate-700" onClick={() => setMenuOpen(false)}>Login</Link>
+              <Link to="/signup" className="w-full text-center py-2 bg-indigo-600 text-white rounded-full font-semibold shadow" onClick={() => setMenuOpen(false)}>Join Now</Link>
             </div>
           ) : (
-            <div className="flex flex-col  space-y-4">
-
-              <div className="flex items-center justify-center space-x-2 px-4 py-2 bg-white rounded-full shadow">
-                <Link to="/profile" className="flex items-center   " onClick={() => setMenuOpen(false)}>
-                <IconUser className="text-purple-700 text-center text-3xl " /> 
-                <span className="font-semibold text-black hover:text-yellow-300 transition">Profile</span>
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <Link to="/profile" className="flex items-center gap-2 text-slate-700 font-medium text-sm" onClick={() => setMenuOpen(false)}>
+                <IconUser className="w-5 h-5 text-indigo-600" />
+                <span>Profile</span>
               </Link>
-              </div>
-
-              <div className="flex items-center justify-center space-x-2 px-4 py-2 bg-white rounded-full shadow">
-                <Wallet className="text-purple-700 text-xl font-semibold" />
-                <span className="font-semibold text-black ">
-                  {user?.walletPoints ?? 0} pts
-                </span>
-              </div>
-                 <LogoutBtn onClick={() => setMenuOpen(false)} />
-    
+              <LogoutBtn onClick={() => setMenuOpen(false)} />
             </div>
           )}
         </div>

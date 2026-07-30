@@ -38,7 +38,7 @@ async function generateSecureQRCode(booking) {
 // Stripe Payment Order / Session Creation
 const createOrder = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
-  const { seatsBooked, usePoints } = req.body;
+  const { seatsBooked, usePoints, couponCode } = req.body;
 
   if (!eventId || !seatsBooked) {
     throw new ApiError(400, "Event ID and seats booked are required");
@@ -62,10 +62,20 @@ const createOrder = asyncHandler(async (req, res) => {
 
   const user = await User.findById(req.user._id);
   let discount = 0;
-  if (usePoints) {
-    discount = Math.min(user.walletPoints, totalPrice);
+
+  // Process promo code discount
+  if (couponCode) {
+    const code = String(couponCode).toUpperCase().trim();
+    if (code === "SPHERE20") discount += Math.round(totalPrice * 0.20);
+    else if (code === "WELCOME10") discount += Math.round(totalPrice * 0.10);
+    else if (code === "FESTIVAL50") discount += Math.round(totalPrice * 0.50);
   }
-  let amountToPay = totalPrice - discount;
+
+  if (usePoints) {
+    const remainingToPay = Math.max(0, totalPrice - discount);
+    discount += Math.min(user.walletPoints, remainingToPay);
+  }
+  let amountToPay = Math.max(0, totalPrice - discount);
 
   // ✅ Wallet-only booking (skip Stripe)
   if (amountToPay <= 0) {

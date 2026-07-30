@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import rateLimit from "express-rate-limit";
 import userRouter from "./routes/user.routes.js";
 import eventRouter from "./routes/event.routes.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
@@ -10,6 +11,13 @@ import chatRouter from "./routes/chat.router.js";
 import contactRouter from "./routes/contact.router.js";
 
 const app = express();
+
+// Rate limiter for authentication & API endpoints
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: { success: false, message: "Too many requests from this IP, please try again after 15 minutes." }
+});
 
 // Dynamic CORS configuration allowing credentials for Vercel & localhost
 app.use(cors({
@@ -32,7 +40,7 @@ app.get("/", (req, res) => {
     });
 });
 
-app.use('/api/v1/users', userRouter);
+app.use('/api/v1/users', authLimiter, userRouter);
 app.use('/api/v1/events', eventRouter);
 app.use('/api/v1/bookings', bookingRouter);
 app.use('/api/v1/reviews', reviewRouter);

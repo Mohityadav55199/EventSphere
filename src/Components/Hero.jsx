@@ -1,44 +1,48 @@
 "use client";
-import React, { use, useEffect, useRef } from "react";
-import { motion } from "motion/react";
+import React from "react";
+import { motion } from "framer-motion";
 import { cn } from "../lib/utils";
-import {IconAnalyzeFilled,IconHeart, IconRouteAltLeft} from "@tabler/icons-react";
-import {  CreditCard, Star, TicketIcon, Wallet, ChartArea } from "lucide-react";
+import { IconAnalyzeFilled, IconHeart, IconRouteAltLeft } from "@tabler/icons-react";
+import { CreditCard, Star, TicketIcon, Wallet, ChartArea, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useSelector } from "react-redux";
 
 export function HeroSectionOne() {
   const user = useSelector((state) => state.auth.user);
- 
-  return (
-    <div className="relative mx-auto flex max-w-8xl flex-col items-center justify-center bg-gradient-to-r from-black via-blue-800 to-black">
-      {/* Grid Lines (Decorations) */}
-      <div className="absolute inset-y-0 left-0 h-full w-px bg-neutral-200/80 dark:bg-neutral-800/80">
-        <div className="absolute top-0 h-40 w-px bg-gradient-to-b from-transparent via-blue-500 to-transparent" />
-      </div>
-      <div className="absolute inset-y-0 right-0 h-full w-px bg-neutral-200/80 dark:bg-neutral-800/80">
-        <div className="absolute h-40 w-px bg-gradient-to-b from-transparent via-blue-500 to-transparent" />
-      </div>
-      <div className="absolute inset-x-0 bottom-0 h-px w-full bg-neutral-200/80 dark:bg-neutral-800/80">
-        <div className="absolute mx-auto h-px w-40 bg-gradient-to-r from-transparent via-blue-500 to-transparent" />
-      </div>
 
-      {/* Content */}
-      <div className="px-6 py-12 sm:py-16 md:py-20">
-        <h1 className="relative z-10 mx-auto max-w-4xl text-center text-2xl sm:text-3xl md:text-5xl lg:text-7xl font-bold text-slate-700 dark:text-slate-300">
-          {"Book the Best Moments with Ease".split(" ").map((word, index) => (
+  return (
+    <div className="relative mx-auto flex max-w-7xl flex-col items-center justify-center bg-slate-50 text-slate-900 py-16 sm:py-24 px-6 overflow-hidden">
+      {/* Background Subtle Gradient Spheres */}
+      <div className="absolute top-10 left-1/2 -translate-x-1/2 w-96 h-96 bg-indigo-200/40 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute top-20 right-10 w-72 h-72 bg-purple-200/40 rounded-full blur-3xl pointer-events-none"></div>
+
+      {/* Badge */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="mb-6 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-bold shadow-sm"
+      >
+        <Sparkles className="w-3.5 h-3.5 fill-indigo-600" />
+        <span>India's Premier Event Booking & Community Platform</span>
+      </motion.div>
+
+      {/* Hero Title */}
+      <div className="px-4 py-2">
+        <h1 className="relative z-10 mx-auto max-w-4xl text-center text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-slate-900 tracking-tight leading-tight">
+          {"Book the Best Live Moments with Ease".split(" ").map((word, index) => (
             <motion.span
               key={index}
               initial={{ opacity: 0, filter: "blur(4px)", y: 10 }}
               animate={{ opacity: 1, filter: "blur(0px)", y: 0 }}
               transition={{
                 duration: 0.3,
-                delay: index * 0.1,
+                delay: index * 0.08,
                 ease: "easeInOut",
               }}
-              className="mr-2 inline-block"
+              className="mr-2.5 inline-block"
             >
-              {word}
+              {word === "Ease" ? <span className="text-indigo-600 underline decoration-indigo-300">{word}</span> : word}
             </motion.span>
           ))}
         </h1>
@@ -46,117 +50,95 @@ export function HeroSectionOne() {
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.3, delay: 0.8 }}
-          className="relative z-10 mx-auto max-w-xl py-4 text-center text-sm sm:text-base md:text-lg font-normal text-neutral-600 dark:text-neutral-400"
+          transition={{ duration: 0.3, delay: 0.7 }}
+          className="relative z-10 mx-auto max-w-2xl py-6 text-center text-sm sm:text-base md:text-lg font-medium text-slate-600 leading-relaxed"
         >
-          Plan your perfect outing with ease – book tickets, explore events, and
-          create lasting memories, all in just a few clicks.
+          Plan your perfect outing in seconds — instant downloadable PDF tickets, live community event chat, automatic cashback points, and hassle-free payments in ₹.
         </motion.p>
 
         {/* Buttons */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.3, delay: 1 }}
-          className="relative z-10 mt-6 sm:mt-8 flex flex-wrap items-center justify-center gap-4"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.9 }}
+          className="relative z-10 flex flex-wrap items-center justify-center gap-4"
         >
           <Link to="/events">
-            <button className="w-full sm:w-48 md:w-60 transform rounded-lg bg-black px-6 py-2 font-medium text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-gray-800 dark:bg-white dark:text-black dark:hover:bg-gray-200">
-              Explore Now
+            <button className="px-8 py-3.5 rounded-full bg-indigo-600 hover:bg-indigo-700 font-bold text-white shadow-xl shadow-indigo-200 transition-all duration-300 hover:-translate-y-0.5 text-sm sm:text-base">
+              Explore All Events →
             </button>
           </Link>
-          <Link to="/signup">
-            {  !user &&   <button className="w-full sm:w-48 md:w-60 transform rounded-lg border border-gray-300 bg-white px-6 py-2 font-medium text-black transition-all duration-300 hover:-translate-y-0.5 hover:bg-gray-100 dark:border-gray-700 dark:bg-black dark:text-white dark:hover:bg-gray-900">
-              Join Now
-            </button>
-            }
-          </Link>
+          {!user && (
+            <Link to="/signup">
+              <button className="px-8 py-3.5 rounded-full border border-slate-300 bg-white hover:bg-slate-100 font-bold text-slate-800 shadow-sm transition-all duration-300 hover:-translate-y-0.5 text-sm sm:text-base">
+                Join Community
+              </button>
+            </Link>
+          )}
         </motion.div>
       </div>
     </div>
   );
 }
 
-
-
 export function FeaturesSection() {
   const features = [
     {
       title: "Built for Event Lovers",
-      description:
-        "Designed for organizers, attendees, and everyone who loves seamless event experiences",
-      icon: <TicketIcon />,
+      description: "Designed for organizers, attendees, and everyone who loves seamless event experiences",
+      icon: <TicketIcon className="w-6 h-6 text-indigo-600" />,
     },
     {
       title: "Personalized Recommendations",
-      description: "Discover events tailored to your interests",
-      icon: <Star />,
+      description: "Discover concerts, workshops, and sports matches tailored to your interests",
+      icon: <Star className="w-6 h-6 text-amber-500" />,
     },
     {
       title: "Hassle Free & Secure Payments",
-      description: "Fast & secure transactions with multiple payment options",
-      icon: <CreditCard />,
+      description: "Fast & instant checkout powered by Stripe & INR Rupee support",
+      icon: <CreditCard className="w-6 h-6 text-emerald-600" />,
     },
     {
-      title: "Wallet Points & Rewards",
-      description: "Earn 5% back in wallet points & Redeem with zero fees",
-      icon: <Wallet />,
+      title: "Wallet Points & Cashback",
+      description: "Earn cashback in wallet points on every booking & redeem instantly",
+      icon: <Wallet className="w-6 h-6 text-purple-600" />,
     },
     {
-      title: "24/7 Support",
-      description: "We’re always here to help you enjoy stress-free bookings",
-      icon: <IconRouteAltLeft />,
+      title: "24/7 Dedicated Support",
+      description: "We’re always here to help you enjoy stress-free ticket bookings",
+      icon: <IconRouteAltLeft className="w-6 h-6 text-rose-500" />,
     },
     {
-      title: "Analytics for Organizers",
-      description:
-        "Track ticket sales, engagement, and audience insights with ease",
-      icon: <IconAnalyzeFilled />,
+      title: "Organizer Revenue Analytics",
+      description: "Track ticket sales, revenue charts, and attendee metrics in real-time",
+      icon: <IconAnalyzeFilled className="w-6 h-6 text-indigo-600" />,
     },
     {
       title: "Real-time Event Chat",
-      description: "Chat with attendees, share updates, and network live",
-      icon: <ChartArea />,
+      description: "Chat with fellow attendees, share updates, and network live",
+      icon: <ChartArea className="w-6 h-6 text-cyan-600" />,
     },
     {
-      title: "And Many More",
-      description: "The list doesn’t end here—discover more inside",
-      icon: <IconHeart />,
+      title: "PDF Tickets & QR Scanner",
+      description: "Download verified QR code PDF tickets instantly from your profile",
+      icon: <IconHeart className="w-6 h-6 text-pink-500" />,
     },
   ];
+
   return (
-    <div className="grid grid-cols-1 -mt-2 sm:grid-cols-2 lg:grid-cols-4 relative z-10 px-6 sm:px-8 md:px-16 lg:px-20 xl:px-28 py-8 sm:py-10 max-w-8xl mx-auto bg-gradient-to-r from-black via-blue-800 to-black">
-      {features.map((feature, index) => (
-        <Feature key={feature.title} {...feature} index={index} />
-      ))}
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {features.map((feature) => (
+          <div
+            key={feature.title}
+            className="p-6 bg-white/90 backdrop-blur-md rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-300 space-y-3"
+          >
+            <div className="p-3 bg-slate-50 rounded-xl w-fit border border-slate-100">{feature.icon}</div>
+            <h3 className="font-bold text-base text-slate-900">{feature.title}</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">{feature.description}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
-
-const Feature = ({ title, description, icon, index }) => {
-  return (
-    <div
-      className={cn(
-        "flex flex-col border-b lg:border-none py-6 sm:py-8 relative group/feature my-2 sm:my-4",
-        "dark:border-slate-200"
-      )}
-    >
-      <div className="mb-4 relative z-10 px-6 sm:px-8 text-neutral-600 dark:text-neutral-400">
-        {icon}
-      </div>
-      <div className="text-base sm:text-lg font-bold mb-2 relative z-10 px-6 sm:px-8">
-        <div className="absolute left-0 inset-y-0 h-6 group-hover/feature:h-8 w-1 rounded-tr-full rounded-br-full bg-neutral-300 dark:bg-neutral-700 group-hover/feature:bg-blue-500 transition-all duration-200 origin-center" />
-        <span className="group-hover/feature:translate-x-2 transition duration-200 inline-block text-neutral-800 dark:text-neutral-100">
-          {title}
-        </span>
-      </div>
-      <p className="text-sm text-neutral-600 dark:text-neutral-300 max-w-xs relative z-10 px-6 sm:px-8">
-        {description}
-      </p>
-    </div>
-  );
-};
-
-
-
-

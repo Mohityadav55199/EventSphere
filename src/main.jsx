@@ -1,57 +1,74 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.jsx'
-import store from './store/store.js'
-import { Provider } from 'react-redux'
-import { createBrowserRouter, createRoutesFromElements, Route, RouterProvider } from 'react-router-dom'
-import {Home,LogIn,Signup,Protected,Profile, Events, About, Contact, Dashboard, AddEvent, DetailEvent} from './index.js'
+import { StrictMode, lazy, Suspense } from 'react';
+import { createRoot } from 'react-dom/client';
+import './index.css';
+import App from './App.jsx';
+import store from './store/store.js';
+import { Provider } from 'react-redux';
+import { createBrowserRouter, createRoutesFromElements, Route, RouterProvider } from 'react-router-dom';
+import { Protected } from './Components/AuthLayout';
 import { SearchProvider } from './Context/SearchContext';
 
+// React Code Splitting with React.lazy
+const Home = lazy(() => import('./Pages/Home'));
+const LogIn = lazy(() => import('./Pages/LogIn'));
+const Signup = lazy(() => import('./Pages/Signup'));
+const Profile = lazy(() => import('./Pages/Profile'));
+const Events = lazy(() => import('./Pages/Events'));
+const About = lazy(() => import('./Pages/About'));
+const Contact = lazy(() => import('./Pages/Contact'));
+const Dashboard = lazy(() => import('./Pages/Dashboard'));
+const AddEvent = lazy(() => import('./Pages/AddEvent'));
+const DetailEvent = lazy(() => import('./Pages/DetailEvent'));
 
-const router=createBrowserRouter(
+const PageLoader = () => (
+  <div className="flex justify-center items-center h-screen bg-slate-50 text-indigo-600 font-semibold text-sm">
+    <div className="flex items-center gap-2">
+      <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+      Loading Page...
+    </div>
+  </div>
+);
+
+const router = createBrowserRouter(
   createRoutesFromElements(
-    <Route path='/' element={<App/>}>
-      <Route path='/' element={<Home/>}/>
+    <Route path='/' element={<App />}>
+      <Route path='/' element={<Suspense fallback={<PageLoader />}><Home /></Suspense>} />
       <Route path='/login' element={
         <Protected authenication={false}>
-         <LogIn/>
+          <Suspense fallback={<PageLoader />}><LogIn /></Suspense>
         </Protected>
-      }/>
-
-<Route path='/signup' element={
+      } />
+      <Route path='/signup' element={
         <Protected authenication={false}>
-          <Signup/>
+          <Suspense fallback={<PageLoader />}><Signup /></Suspense>
         </Protected>
-      }/>
-
-<Route path='/profile' element={<Profile/>}/>
-<Route path='/events' element={<Events/>}/>
-<Route path='/about' element={<About/>}/>
-<Route path='/contact' element={<Contact/>}/>
-<Route path='/events/:id' element={<DetailEvent/>}/>
-<Route path='/dashboard' element={
+      } />
+      <Route path='/profile' element={<Suspense fallback={<PageLoader />}><Profile /></Suspense>} />
+      <Route path='/events' element={<Suspense fallback={<PageLoader />}><Events /></Suspense>} />
+      <Route path='/about' element={<Suspense fallback={<PageLoader />}><About /></Suspense>} />
+      <Route path='/contact' element={<Suspense fallback={<PageLoader />}><Contact /></Suspense>} />
+      <Route path='/events/:id' element={<Suspense fallback={<PageLoader />}><DetailEvent /></Suspense>} />
+      <Route path='/event/:id' element={<Suspense fallback={<PageLoader />}><DetailEvent /></Suspense>} />
+      <Route path='/dashboard' element={
         <Protected authenication={true}>
-          <Dashboard/>
+          <Suspense fallback={<PageLoader />}><Dashboard /></Suspense>
         </Protected>
-      }/>
-<Route path='/create-event' element={
+      } />
+      <Route path='/create-event' element={
         <Protected authenication={true}>
-          <AddEvent/>
+          <Suspense fallback={<PageLoader />}><AddEvent /></Suspense>
         </Protected>
-      }/>
-
-</Route> 
-  ))
-
+      } />
+    </Route>
+  )
+);
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <Provider store={store}>
       <SearchProvider>
-       <RouterProvider router={router}/>
+        <RouterProvider router={router} />
       </SearchProvider>
-   
     </Provider>
-  </StrictMode>,
-)
+  </StrictMode>
+);
