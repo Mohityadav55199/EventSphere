@@ -4,6 +4,7 @@ import app from "./app.js";
 import { initSocket } from "./socket.js";
 import http from "http";
 import { autoSeedEventsIfEmpty } from "./utils/autoSeed.js";
+import { startHoldExpiryJob } from "./jobs/holdExpiry.js";
 
 dotenv.config({
   path: "./.env",
@@ -17,6 +18,10 @@ connectDB()
     const port = process.env.PORT || 5000;
     const server = http.createServer(app);
     initSocket(server);
+
+    // Start the seat hold expiry cron job (cleans up abandoned checkouts every 60s)
+    startHoldExpiryJob();
+
     server.listen(port, () => {
       console.log("Server is started and running at port", port);
       console.log("Server is running at http://localhost:" + port);

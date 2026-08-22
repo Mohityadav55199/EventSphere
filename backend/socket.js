@@ -4,6 +4,8 @@ import ChatMessage from "./models/chatMessage.model.js";
 import jwt from "jsonwebtoken";
 import User from "./models/user.model.js";
 import Booking from "./models/booking.model.js";
+import Event from "./models/event.model.js";
+import { getTotalHeldSeats } from "./utils/seatHold.js";
 
 let io;
 
@@ -18,29 +20,84 @@ export const initSocket = (server) => {
   // Authenticate socket connection
   io.use(async (socket, next) => {
     try {
-      
-      const token =  socket.handshake.auth?.token ||
-      socket.handshake.headers?.authorization?.replace("Bearer ", "");
-      if (!token) return next(new Error("Access token is required"));
-      console.log("🔑 Incoming token:", socket.handshake.auth?.token);
+      // Allow unauthenticated connections for public seat watching
+      const token =
+        socket.handshake.auth?.token ||
+        socket.handshake.headers?.authorization?.replace("Bearer ", "");
+
+      if (!token) {
+        socket.user = null; // unauthenticated — can only watch seats
+        return next();
+      }
+
       const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-      console.log("✅ Token verified:", decoded);
       const user = await User.findById(decoded._id).select("-password -refreshToken");
       if (!user) return next(new Error("User not found"));
 
       socket.user = user;
       next();
     } catch (err) {
-      next(new Error("Authentication failed"));
+      // Token invalid but allow connection for seat watching
+      socket.user = null;
+      next();
     }
   });
 
   io.on("connection", (socket) => {
-    console.log(`User connected: ${socket.user.name}`);
+    if (socket.user) {
+      console.log(`✅ User connected: ${socket.user.name}`);
+    } else {
+      console.log(`👤 Guest connected (seat watcher): ${socket.id}`);
+    }
 
-    socket.on("joinRoom", async ({ eventId }) => {
+    // ── CONCURRENCY: Watch live seat count for an event ───────────────────────
+    // Any client (logged in or not) can subscribe to a seats room for live updates.
+    // The booking controller's emitSeatUpdate() broadcasts here after every
+    // hold / release / confirm / expiry.
+    socket.on("watchSeats", async ({ eventId }) => {
+      if (!eventId) return;
+
+      const seatRoom = `seats:${eventId}`;
+      socket.join(seatRoom);
+
       try {
-        // Verify booking
+        const event = await Event.findById(eventId).select("capacity availableSeats title");
+        if (!event) return socket.emit("error", "Event not found");
+
+        const heldSeats = await getTotalHeldSeats(String(eventId));
+        const effectiveFreeSeats = Math.max(
+          0,
+          (event.availableSeats ?? event.capacity) - heldSeats
+        );
+
+        // Immediately send current state to the new watcher
+        socket.emit("seatUpdate", {
+          eventId: String(eventId),
+          availableSeats: event.availableSeats ?? event.capacity,
+          heldSeats,
+          effectiveFreeSeats,
+          capacity: event.capacity,
+          isSoldOut: effectiveFreeSeats === 0,
+          fillingFast: effectiveFreeSeats > 0 && effectiveFreeSeats <= event.capacity * 0.2,
+          timestamp: new Date().toISOString(),
+        });
+
+        console.log(`👁️  Socket ${socket.id} watching seats for event ${eventId}`);
+      } catch (err) {
+        socket.emit("error", "Failed to get seat availability");
+      }
+    });
+
+    // Stop watching seats for an event
+    socket.on("unwatchSeats", ({ eventId }) => {
+      socket.leave(`seats:${eventId}`);
+    });
+
+    // ── Chat: Join event community room (requires confirmed booking) ────────────
+    socket.on("joinRoom", async ({ eventId }) => {
+      if (!socket.user) return socket.emit("error", "Authentication required to join chat");
+
+      try {
         const booking = await Booking.findOne({
           event: eventId,
           user: socket.user._id,
@@ -48,15 +105,13 @@ export const initSocket = (server) => {
         });
 
         if (!booking) {
-          return socket.emit("error", "Book this Event to Access the Community Room");
+          return socket.emit("error", "Book this event to access the community room");
         }
 
-        // Join chat room
         socket.join(eventId);
         socket.emit("joined", `You have successfully joined chat for event ${eventId}`);
-        console.log(`User ${socket.user._id} joined room: ${eventId}`);
+        console.log(`💬 User ${socket.user._id} joined room: ${eventId}`);
 
-        // Send last 20 messages
         const history = await ChatMessage.find({ roomId: eventId })
           .sort({ createdAt: -1 })
           .limit(20)
@@ -70,13 +125,13 @@ export const initSocket = (server) => {
     });
 
     socket.on("sendMessage", async ({ roomId, message }) => {
+      if (!socket.user) return socket.emit("error", "Authentication required");
       if (!message?.trim()) return;
-      
-  // Check if user is part of the room
-    const rooms = Array.from(socket.rooms);
-    if (!rooms.includes(roomId)) {
-      return socket.emit("error", "You are not allowed to send messages to this room");
-    }
+
+      const rooms = Array.from(socket.rooms);
+      if (!rooms.includes(roomId)) {
+        return socket.emit("error", "You are not allowed to send messages to this room");
+      }
 
       const newMessage = await ChatMessage.create({
         roomId,
@@ -90,11 +145,11 @@ export const initSocket = (server) => {
 
     socket.on("leaveRoom", (roomId) => {
       socket.leave(roomId);
-      console.log(`User ${socket.user.name} left room: ${roomId}`);
+      if (socket.user) console.log(`User ${socket.user.name} left room: ${roomId}`);
     });
 
     socket.on("typing", (roomId) => {
-      socket.to(roomId).emit("typing", socket.user.name);
+      if (socket.user) socket.to(roomId).emit("typing", socket.user.name);
     });
 
     socket.on("stopTyping", (roomId) => {
@@ -102,7 +157,7 @@ export const initSocket = (server) => {
     });
 
     socket.on("disconnect", () => {
-      console.log(`User disconnected: ${socket.user.name}`);
+      if (socket.user) console.log(`User disconnected: ${socket.user.name}`);
     });
   });
 

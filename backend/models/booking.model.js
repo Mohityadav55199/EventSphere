@@ -19,6 +19,22 @@ const bookingSchema = new Schema({
         enum: ["confirmed", "cancelled", "pending"],
         default: "pending",
     },
+    // Concurrency lifecycle status
+    // hold    → seats reserved in Redis, awaiting payment
+    // confirmed → payment verified, seats permanently deducted in MongoDB
+    // cancelled → user cancelled; seats restored
+    // expired → hold TTL elapsed without payment; seats restored by cron job
+    status: {
+        type: String,
+        enum: ["hold", "confirmed", "cancelled", "expired"],
+        default: "hold",
+        index: true,
+    },
+    // When the Redis seat hold expires (used by holdExpiry cron job)
+    holdExpiresAt: {
+        type: Date,
+        index: true, // for fast expiry queries
+    },
     cancelDate: {
         type: Date,
     },  

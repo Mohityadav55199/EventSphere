@@ -73,6 +73,14 @@ const eventSchema = new Schema({
         required: [true, "Capacity is required"],
         min: [1, "Capacity must be at least 1"],
     },
+    // Live seat counter — decremented atomically on booking, incremented on cancel.
+    // Separate from `capacity` (which is the immutable ceiling).
+    // If not set, defaults to capacity (migration script handles existing events).
+    availableSeats: {
+        type: Number,
+        min: [0, "Available seats cannot be negative"],
+        default: undefined, // set via pre-save hook below
+    },
     avgRating: { 
         type: Number, 
         default: 0 
@@ -87,6 +95,17 @@ const eventSchema = new Schema({
     
 
 }, { timestamps: true });
+
+// Pre-save hook: auto-populate availableSeats = capacity on first save
+eventSchema.pre("save", function (next) {
+    if (this.isNew && this.availableSeats === undefined) {
+        this.availableSeats = this.capacity;
+    }
+    next();
+});
+
+// Index for fast atomic seat queries
+eventSchema.index({ availableSeats: 1 });
 
 const Event = mongoose.model("Event", eventSchema);
 export default Event;

@@ -12,11 +12,24 @@ import contactRouter from "./routes/contact.router.js";
 
 const app = express();
 
-// Rate limiter for authentication & API endpoints
+// General rate limiter for auth endpoints
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
+    max: 100,
     message: { success: false, message: "Too many requests from this IP, please try again after 15 minutes." }
+});
+
+// Strict booking limiter — prevents seat hold spam (BookMyShow-style abuse prevention).
+// 5 booking attempts per minute per IP is generous for real users but blocks bots.
+const bookingLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute window
+    max: 5,              // 5 booking mutations per minute per IP
+    keyGenerator: (req) => req.ip + (req.user?._id || ""), // per IP + per user
+    message: {
+        success: false,
+        message: "Too many booking attempts. Please wait a moment before trying again."
+    },
+    skip: (req) => req.method === "GET", // seat availability GETs are not rate-limited
 });
 
 // Dynamic CORS configuration allowing credentials for Vercel & localhost
@@ -42,7 +55,7 @@ app.get("/", (req, res) => {
 
 app.use('/api/v1/users', authLimiter, userRouter);
 app.use('/api/v1/events', eventRouter);
-app.use('/api/v1/bookings', bookingRouter);
+app.use('/api/v1/bookings', bookingLimiter, bookingRouter);
 app.use('/api/v1/reviews', reviewRouter);
 app.use('/api/v1/chat', chatRouter);
 app.use('/api/v1/contacts', contactRouter);
