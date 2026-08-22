@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import rateLimit from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import userRouter from "./routes/user.routes.js";
 import eventRouter from "./routes/event.routes.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
@@ -24,7 +24,10 @@ const authLimiter = rateLimit({
 const bookingLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute window
     max: 5,              // 5 booking mutations per minute per IP
-    keyGenerator: (req) => req.ip + (req.user?._id || ""), // per IP + per user
+    keyGenerator: (req, res) => {
+        // Use ipKeyGenerator to correctly handle IPv6 and avoid ERR_ERL_KEY_GEN_IPV6
+        return ipKeyGenerator(req, res) + (req.user?._id || "");
+    },
     message: {
         success: false,
         message: "Too many booking attempts. Please wait a moment before trying again."
