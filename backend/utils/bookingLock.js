@@ -1,47 +1,47 @@
 /**
- * bookingLock.js — Atomic MongoDB seat decrement/restore
+ * bookingLock.js — Atomic MongoDB specific seat locking
  *
  * Uses findOneAndUpdate with a conditional filter to atomically:
- *   - Decrement availableSeats (booking confirmation)
- *   - Increment availableSeats (cancellation / hold expiry)
- *
- * This eliminates the TOCTOU (read-then-write) race condition in the
- * original booking controller's aggregation-based seat check.
+ *   - Reserve specific seats (booking confirmation)
+ *   - Release specific seats (cancellation / hold expiry)
  */
 
 import Event from "../models/event.model.js";
 import { ApiError } from "./ApiError.js";
 
 /**
- * Atomically decrement availableSeats.
- * Only succeeds if the event exists AND has enough available seats.
+ * Atomically book specific seats.
+ * Only succeeds if the event exists AND none of the requested seats are already booked.
  *
  * @param {string} eventId
- * @param {number} seats - number of seats to decrement
+ * @param {string[]} seatsArray - array of seat IDs to book
  * @returns {Promise<Event>} updated event document
- * @throws {ApiError} if event not found or not enough seats
+ * @throws {ApiError} if event not found or seats unavailable
  */
-async function atomicDecrementSeats(eventId, seats) {
+async function atomicDecrementSeats(eventId, seatsArray) {
+  if (!seatsArray || seatsArray.length === 0) return;
+
   const updatedEvent = await Event.findOneAndUpdate(
     {
       _id: eventId,
-      availableSeats: { $gte: seats }, // Guard: only proceed if enough seats
+      bookedSeats: { $nin: seatsArray }, // Guard: only proceed if NO seats overlap
     },
     {
-      $inc: { availableSeats: -seats },
+      $push: { bookedSeats: { $each: seatsArray } },
+      $inc: { availableSeats: -seatsArray.length }, // Keep legacy count synced
     },
     { new: true }
   );
 
   if (!updatedEvent) {
-    // Either event doesn't exist OR availableSeats was insufficient
-    const event = await Event.findById(eventId).select("availableSeats title");
+    // Either event doesn't exist OR one of the seats was booked
+    const event = await Event.findById(eventId).select("title bookedSeats");
     if (!event) {
       throw new ApiError(404, "Event not found");
     }
     throw new ApiError(
       409, // 409 Conflict — appropriate for concurrency failures
-      `Sorry, only ${event.availableSeats} seat(s) remaining for "${event.title}". Please reduce your selection.`
+      `One or more of your selected seats for "${event.title}" have just been booked. Please choose different seats.`
     );
   }
 
@@ -49,28 +49,21 @@ async function atomicDecrementSeats(eventId, seats) {
 }
 
 /**
- * Atomically restore (increment) availableSeats.
+ * Atomically restore specific seats.
  * Used on cancellation or hold expiry.
  *
  * @param {string} eventId
- * @param {number} seats - number of seats to restore
- * @param {number} [maxCapacity] - optional cap to prevent exceeding original capacity
+ * @param {string[]} seatsArray - array of seat IDs to restore
  * @returns {Promise<Event>} updated event document
  */
-async function atomicRestoreSeats(eventId, seats, maxCapacity) {
+async function atomicRestoreSeats(eventId, seatsArray) {
+  if (!seatsArray || seatsArray.length === 0) return;
+  
   const filter = { _id: eventId };
-  const update = { $inc: { availableSeats: seats } };
-
-  // If we know the max capacity, clamp to prevent overflow
-  if (maxCapacity !== undefined) {
-    // findOneAndUpdate after increment then clamp — simpler approach
-    const event = await Event.findOneAndUpdate(filter, update, { new: true });
-    if (event && event.availableSeats > maxCapacity) {
-      await Event.findByIdAndUpdate(eventId, { availableSeats: maxCapacity });
-      event.availableSeats = maxCapacity;
-    }
-    return event;
-  }
+  const update = { 
+      $pullAll: { bookedSeats: seatsArray },
+      $inc: { availableSeats: seatsArray.length }
+  };
 
   return await Event.findOneAndUpdate(filter, update, { new: true });
 }

@@ -35,7 +35,8 @@ function useLiveSeatCount(eventId) {
   const [seatData, setSeatData] = useState({
     effectiveFreeSeats: 0,
     availableSeats: 0,
-    heldSeats: 0,
+    bookedSeats: [],
+    heldSeats: [],
     capacity: 0,
     isSoldOut: false,
     fillingFast: false,
@@ -58,7 +59,8 @@ function useLiveSeatCount(eventId) {
         ...prev,
         effectiveFreeSeats: data.effectiveFreeSeats ?? prev.effectiveFreeSeats,
         availableSeats: data.availableSeats ?? prev.availableSeats,
-        heldSeats: data.heldSeats ?? prev.heldSeats,
+        bookedSeats: data.bookedSeats || [],
+        heldSeats: data.heldSeats || [],
         capacity: data.capacity ?? prev.capacity,
         isSoldOut: data.isSoldOut ?? prev.isSoldOut,
         fillingFast: data.fillingFast ?? prev.fillingFast,
@@ -90,13 +92,17 @@ function useLiveSeatCount(eventId) {
     // ── Handle incoming seat update ───────────────────────────────────────────
     socket.on("seatUpdate", (data) => {
       if (data.eventId !== String(eventId)) return; // Guard for multi-event pages
+      // Calculate effective free seats in frontend if backend doesn't send it
+      const freeSeats = Math.max(0, (data.availableSeats ?? data.capacity) - (data.heldSeats?.length || 0));
+      
       setSeatData({
-        effectiveFreeSeats: data.effectiveFreeSeats,
+        effectiveFreeSeats: data.effectiveFreeSeats ?? freeSeats,
         availableSeats: data.availableSeats,
-        heldSeats: data.heldSeats,
+        bookedSeats: data.bookedSeats || [],
+        heldSeats: data.heldSeats || [],
         capacity: data.capacity,
-        isSoldOut: data.isSoldOut,
-        fillingFast: data.fillingFast,
+        isSoldOut: data.isSoldOut ?? (freeSeats === 0 || (data.bookedSeats?.length >= data.capacity)),
+        fillingFast: data.fillingFast ?? (freeSeats > 0 && freeSeats <= data.capacity * 0.2),
         isLoading: false,
         lastUpdated: new Date(data.timestamp),
       });

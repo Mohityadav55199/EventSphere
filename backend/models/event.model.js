@@ -81,6 +81,10 @@ const eventSchema = new Schema({
         min: [0, "Available seats cannot be negative"],
         default: undefined, // set via pre-save hook below
     },
+    bookedSeats: {
+        type: [String],
+        default: []
+    },
     avgRating: { 
         type: Number, 
         default: 0 

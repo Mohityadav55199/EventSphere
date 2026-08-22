@@ -38,10 +38,13 @@ const bookingSchema = new Schema({
     cancelDate: {
         type: Date,
     },  
+    selectedSeats: {
+        type: [String],
+        default: [],
+    },
     seatsBooked: {
         type: Number,
-        required: [true, "Seats booked are required"],
-        min: [1, "At least one seat must be booked"],
+        default: 0,
     },
     stripeSessionId: {
         type: String,

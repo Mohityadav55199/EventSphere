@@ -10,6 +10,7 @@ import ReviewCard from "../Components/Cards/ReviewCard";
 import ReviewForm from "../Components/Cards/PostReview";
 import ChatBox from "../Components/Chatbox/Chatbox";
 import useLiveSeatCount from "../hooks/useLiveSeatCount";
+import SeatMap from "../Components/SeatMap";
 
 function DetailEvent() {
   const { id } = useParams();
@@ -17,7 +18,7 @@ function DetailEvent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [BookingAvailable, setBookingAvailable] = useState(false);
-  const [seats, setSeats] = useState(1);
+  const [selectedSeats, setSelectedSeats] = useState([]);
   const [usePoints, setUsePoints] = useState(false);
   const [couponCode, setCouponCode] = useState("");
   const [selectedTier, setSelectedTier] = useState(null);
@@ -30,6 +31,7 @@ function DetailEvent() {
   const {
     effectiveFreeSeats,
     availableSeats: liveAvailableSeats,
+    bookedSeats,
     heldSeats,
     capacity,
     isSoldOut,
@@ -83,13 +85,18 @@ function DetailEvent() {
         return;
       }
 
-      if (seats > displayAvailableSeats) {
+      if (selectedSeats.length === 0) {
+        toast.error("Please select at least one seat.");
+        return;
+      }
+
+      if (selectedSeats.length > displayAvailableSeats) {
         toast.error(`Only ${displayAvailableSeats} seat(s) available right now.`);
         return;
       }
 
       const orderResponse = await createOrder(id, {
-        seatsBooked: seats,
+        selectedSeats,
         usePoints,
         couponCode,
         ticketTier: selectedTier?.name,
@@ -114,19 +121,7 @@ function DetailEvent() {
         return;
       }
 
-      // Dev/mock Stripe flow — verify immediately
-      await verifyPayment({
-        stripe_session_id: orderResponse.data?.stripeSessionId || orderResponse.data?.orderId,
-        bookingId: orderResponse.data?.bookingId,     // pass hold booking ID
-        eventId: id,
-        seatsBooked: seats,
-        discount: orderResponse.data?.discount || 0,
-        ticketTier: selectedTier?.name,
-        ticketPrice: selectedTier?.price || event?.Price,
-      });
-      toast.success("Payment Successful & Booking Confirmed!");
-      setOpen(false);
-      navigate("/profile");
+      toast.error("Stripe Checkout URL not provided by the server.");
     } catch (error) {
       const msg = error?.message || error?.data?.message || "Booking failed. Try again.";
       // Show concurrency-specific messages clearly
@@ -229,11 +224,11 @@ function DetailEvent() {
           </div>
 
           {/* Held seats notice — shows when others are currently in checkout */}
-          {!seatLoading && heldSeats > 0 && !isSoldOut && (
+          {!seatLoading && heldSeats.length > 0 && !isSoldOut && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
               <Zap className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
               <span>
-                <strong>{heldSeats} seat{heldSeats > 1 ? "s" : ""}</strong> currently in checkout by other users — grab yours before they sell out!
+                <strong>{heldSeats.length} seat{heldSeats.length > 1 ? "s" : ""}</strong> currently in checkout by other users — grab yours before they sell out!
               </span>
             </div>
           )}
@@ -353,19 +348,21 @@ function DetailEvent() {
               <span className="text-base font-black text-indigo-600">₹{selectedTier?.price || event?.Price}</span>
             </div>
 
-            {/* Ticket Quantity */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">
-                Number of Tickets (Max {displayAvailableSeats})
+            {/* Interactive Seat Map */}
+            <div className="w-full">
+              <label className="block text-xs font-bold text-slate-700 mb-2">
+                Select Your Seats (Max 10)
               </label>
-              <input
-                type="number"
-                min="1"
-                max={displayAvailableSeats}
-                value={seats}
-                onChange={(e) => setSeats(Math.min(Math.max(1, Number(e.target.value)), displayAvailableSeats))}
-                className="border border-slate-200 bg-slate-50 rounded-xl px-3 py-2.5 w-full text-sm outline-none focus:border-indigo-500 font-bold"
-              />
+              <div className="max-h-64 overflow-y-auto w-full custom-scrollbar">
+                <SeatMap
+                  capacity={event?.capacity || 100}
+                  bookedSeats={bookedSeats}
+                  heldSeats={heldSeats}
+                  selectedSeats={selectedSeats}
+                  onSeatToggle={setSelectedSeats}
+                  maxSelectable={10}
+                />
+              </div>
             </div>
 
             {/* Promo Code Input */}
@@ -400,8 +397,8 @@ function DetailEvent() {
 
             {/* Total Estimated Price */}
             <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <span className="text-xs text-slate-500 font-medium">Subtotal ({seats} ticket{seats > 1 ? "s" : ""})</span>
-              <span className="text-lg font-black text-slate-900">₹{(selectedTier?.price || event?.Price) * seats}</span>
+              <span className="text-xs text-slate-500 font-medium">Subtotal ({selectedSeats.length} ticket{selectedSeats.length > 1 ? "s" : ""})</span>
+              <span className="text-lg font-black text-slate-900">₹{(selectedTier?.price || event?.Price) * selectedSeats.length}</span>
             </div>
 
             {/* Actions */}

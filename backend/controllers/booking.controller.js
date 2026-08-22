@@ -49,15 +49,14 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_dummy_stripe
 async function emitSeatUpdate(eventId) {
   try {
     const io = getIO();
-    const event = await Event.findById(eventId).select("availableSeats capacity");
-    const heldSeats = await getTotalHeldSeats(String(eventId));
+    const event = await Event.findById(eventId).select("availableSeats capacity bookedSeats");
+    const heldSeats = await getTotalHeldSeats(String(eventId)); // now returns array of seat IDs
 
     io.to(`seats:${eventId}`).emit("seatUpdate", {
       eventId: String(eventId),
       availableSeats: event?.availableSeats ?? 0,
-      heldSeats,
-      // Seats effectively free = available minus currently held
-      effectiveFreeSeats: Math.max(0, (event?.availableSeats ?? 0) - heldSeats),
+      bookedSeats: event?.bookedSeats || [],
+      heldSeats: heldSeats || [],
       capacity: event?.capacity ?? 0,
       timestamp: new Date().toISOString(),
     });
@@ -81,12 +80,13 @@ async function generateSecureQRCode(booking) {
 // ─── createOrder ─────────────────────────────────────────────────────────────
 const createOrder = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
-  const { seatsBooked, usePoints, couponCode, ticketTier } = req.body;
+  const { selectedSeats, usePoints, couponCode, ticketTier } = req.body;
 
-  if (!eventId || !seatsBooked || seatsBooked < 1) {
-    throw new ApiError(400, "Event ID and a valid number of seats are required");
+  if (!eventId || !Array.isArray(selectedSeats) || selectedSeats.length < 1) {
+    throw new ApiError(400, "Event ID and an array of selected seats are required");
   }
 
+  const seatsBooked = selectedSeats.length;
   const event = await Event.findById(eventId);
   if (!event) throw new ApiError(404, "Event not found");
   if (event.activeStatus !== "active") {
@@ -100,7 +100,7 @@ const createOrder = asyncHandler(async (req, res) => {
   const holdResult = await holdSeats(
     String(eventId),
     String(req.user._id),
-    seatsBooked,
+    selectedSeats,
     effectiveAvailable,
     DEFAULT_HOLD_SECONDS
   );
@@ -143,14 +143,15 @@ const createOrder = asyncHandler(async (req, res) => {
   // ── Wallet-only booking (skip Stripe) ──────────────────────────────────────
   if (amountToPay <= 0) {
     // Confirm hold in Redis
-    await confirmHold(String(eventId), String(req.user._id));
+    await confirmHold(String(eventId), String(req.user._id), selectedSeats);
 
     // ── LAYER 2: Atomic MongoDB seat decrement ──────────────────────────────
-    await atomicDecrementSeats(eventId, seatsBooked);
+    await atomicDecrementSeats(eventId, selectedSeats);
 
     const booking = await Booking.create({
       user: req.user._id,
       event: event._id,
+      selectedSeats,
       seatsBooked,
       ticketTier: selectedTierName,
       ticketPrice: unitPrice,
@@ -195,6 +196,7 @@ const createOrder = asyncHandler(async (req, res) => {
   const pendingBooking = await Booking.create({
     user: req.user._id,
     event: event._id,
+    selectedSeats,
     seatsBooked,
     ticketTier: selectedTierName,
     ticketPrice: unitPrice,
@@ -228,12 +230,12 @@ const createOrder = asyncHandler(async (req, res) => {
       metadata: {
         bookingId: String(pendingBooking._id),
         eventId: String(eventId),
-        seatsBooked: String(seatsBooked),
+        selectedSeats: JSON.stringify(selectedSeats),
         discount: String(discount),
         ticketTier: selectedTierName,
         ticketPrice: String(unitPrice),
       },
-      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/profile?session_id={CHECKOUT_SESSION_ID}&booking_id=${pendingBooking._id}&event_id=${eventId}&seats=${seatsBooked}&discount=${discount}&tier=${encodeURIComponent(selectedTierName)}&price=${unitPrice}`,
+      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/profile?session_id={CHECKOUT_SESSION_ID}&booking_id=${pendingBooking._id}&event_id=${eventId}&seats=${encodeURIComponent(JSON.stringify(selectedSeats))}&discount=${discount}&tier=${encodeURIComponent(selectedTierName)}&price=${unitPrice}`,
       cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/event/${eventId}`,
       expires_at: Math.floor(Date.now() / 1000) + DEFAULT_HOLD_SECONDS, // Stripe session also expires
     });
@@ -241,14 +243,10 @@ const createOrder = asyncHandler(async (req, res) => {
     // Store session ID on the pending booking
     await Booking.findByIdAndUpdate(pendingBooking._id, { stripeSessionId: session.id });
   } catch (err) {
-    console.warn("Stripe API error (using mock session for dev):", err.message);
-    session = {
-      id: `cs_test_mock_${Date.now()}`,
-      url: null,
-      currency: "inr",
-      amount_total: Math.round(amountToPay * 100),
-    };
-    await Booking.findByIdAndUpdate(pendingBooking._id, { stripeSessionId: session.id });
+    // Release the hold and booking if Stripe fails
+    await releaseHold(String(eventId), String(req.user._id), selectedSeats);
+    await Booking.findByIdAndDelete(pendingBooking._id);
+    throw new ApiError(500, `Stripe API error: ${err.message}. Please ensure STRIPE_SECRET_KEY is valid.`);
   }
 
   // ── LAYER 3: Broadcast that seats are now on hold ──────────────────────────
@@ -279,7 +277,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
     razorpay_order_id,
     razorpay_payment_id,
     eventId,
-    seatsBooked,
+    selectedSeats, // Now receiving array instead of single number
     discount,
     ticketTier,
     ticketPrice,
@@ -287,9 +285,11 @@ const verifyPayment = asyncHandler(async (req, res) => {
   } = req.body;
 
   const sessionId = stripe_session_id || razorpay_order_id;
-  if (!sessionId || !eventId || !seatsBooked) {
-    throw new ApiError(400, "Session ID, event ID, and seats are required");
+  if (!sessionId || !eventId || !Array.isArray(selectedSeats)) {
+    throw new ApiError(400, "Session ID, event ID, and selectedSeats array are required");
   }
+
+  const seatsBooked = selectedSeats.length;
 
   const event = await Event.findById(eventId);
   if (!event) throw new ApiError(404, "Event not found");
@@ -310,12 +310,12 @@ const verifyPayment = asyncHandler(async (req, res) => {
   }
 
   // ── LAYER 1: Confirm hold (remove from Redis) ───────────────────────────────
-  await confirmHold(String(eventId), String(req.user._id));
+  await confirmHold(String(eventId), String(req.user._id), selectedSeats);
 
   // ── LAYER 2: Atomic MongoDB seat decrement ──────────────────────────────────
   // This is the final guard — even if Redis hold somehow failed, this
   // atomic op prevents overselling at the DB level.
-  await atomicDecrementSeats(eventId, seatsBooked);
+  await atomicDecrementSeats(eventId, selectedSeats);
 
   // ── Create / update booking as confirmed ───────────────────────────────────
   const basePrice = ticketPrice || event.Price;
@@ -336,6 +336,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
     booking = await Booking.create({
       user: req.user._id,
       event: event._id,
+      selectedSeats,
       seatsBooked,
       ticketTier: ticketTier || "Standard Pass",
       ticketPrice: basePrice,
@@ -402,12 +403,11 @@ const cancelBooking = asyncHandler(async (req, res) => {
   await booking.save();
 
   // ── Release Redis hold (if still active) ───────────────────────────────────
-  await releaseHold(String(eventId), String(req.user._id));
+  await releaseHold(String(eventId), String(req.user._id), booking.selectedSeats);
 
   // ── Restore seats in MongoDB (only if booking was confirmed) ────────────────
   if (wasConfirmed) {
-    const event = await Event.findById(eventId);
-    await atomicRestoreSeats(eventId, booking.seatsBooked, event?.capacity);
+    await atomicRestoreSeats(eventId, booking.selectedSeats);
   }
 
   // ── LAYER 3: Broadcast restored seat count ─────────────────────────────────
@@ -468,20 +468,23 @@ const getEventBookings = asyncHandler(async (req, res) => {
 // New endpoint: returns live seat count for polling or initial page load
 const getSeatAvailability = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
-  const event = await Event.findById(eventId).select("capacity availableSeats title");
+  const event = await Event.findById(eventId).select("capacity availableSeats title bookedSeats");
   if (!event) throw new ApiError(404, "Event not found");
 
-  const heldSeats = await getTotalHeldSeats(String(eventId));
-  const effectiveFreeSeats = Math.max(0, (event.availableSeats ?? event.capacity) - heldSeats);
+  const heldSeats = await getTotalHeldSeats(String(eventId)); // Array of seat IDs
+  
+  // Backwards compatibility for capacity checks
+  const effectiveFreeSeats = Math.max(0, (event.availableSeats ?? event.capacity) - heldSeats.length);
 
   res.status(200).json(
     new ApiResponse(200, {
       eventId,
       capacity: event.capacity,
       availableSeats: event.availableSeats ?? event.capacity,
-      heldSeats,
+      bookedSeats: event.bookedSeats || [],
+      heldSeats: heldSeats || [],
       effectiveFreeSeats,
-      isSoldOut: effectiveFreeSeats === 0,
+      isSoldOut: effectiveFreeSeats === 0 || event.bookedSeats?.length >= event.capacity,
       fillingFast: effectiveFreeSeats > 0 && effectiveFreeSeats <= event.capacity * 0.2,
     }, "Seat availability fetched")
   );

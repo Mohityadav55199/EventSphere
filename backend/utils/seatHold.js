@@ -15,60 +15,104 @@ const DEFAULT_HOLD_SECONDS = 600; // 10 minutes
 
 /**
  * Atomically hold seats for a user on an event.
- * Uses SET NX EX — set-if-not-exists with TTL.
  *
  * @param {string} eventId
  * @param {string} userId
- * @param {number} seatsToHold
- * @param {number} availableSeats  - current DB value of event.availableSeats
+ * @param {string[]} seatsToHoldArray  - array of specific seat IDs e.g. ['A1', 'A2']
+ * @param {number} availableSeats  - (deprecated in this model, keeping for signature compatibility)
  * @param {number} [durationSecs=600]
  * @returns {Promise<{ success: boolean, heldSeats: number, reason?: string }>}
  */
-async function holdSeats(eventId, userId, seatsToHold, availableSeats, durationSecs = DEFAULT_HOLD_SECONDS) {
+async function holdSeats(eventId, userId, seatsToHoldArray, availableSeats, durationSecs = DEFAULT_HOLD_SECONDS) {
   const redis = await getRedisClient();
-  const holdKey = `${HOLD_PREFIX}:${eventId}:${userId}`;
-
-  // Count seats already held by ALL users for this event
-  const totalHeld = await getTotalHeldSeats(eventId);
-  const effectiveFree = availableSeats - totalHeld;
-
-  if (effectiveFree < seatsToHold) {
-    return {
-      success: false,
-      heldSeats: totalHeld,
-      reason: `Only ${effectiveFree} seat(s) available (${totalHeld} currently on hold by other users)`,
-    };
+  
+  if (!Array.isArray(seatsToHoldArray) || seatsToHoldArray.length === 0) {
+    return { success: false, heldSeats: 0, reason: "No seats selected" };
   }
 
-  // Try NX (set only if not exists)
-  const result = await redis.set(holdKey, String(seatsToHold), { nx: true, ex: durationSecs });
-
-  if (!result) {
-    // User already has an active hold — refresh it (allow re-booking same seats)
-    await redis.set(holdKey, String(seatsToHold), { ex: durationSecs });
+  const keys = seatsToHoldArray.map(seatId => `${HOLD_PREFIX}:${eventId}:${seatId}`);
+  
+  // Quick pre-check
+  const existingHolds = await redis.mget(...keys);
+  for (let i = 0; i < existingHolds.length; i++) {
+    if (existingHolds[i] !== null && existingHolds[i] !== userId) {
+      return { success: false, heldSeats: 0, reason: `Seat ${seatsToHoldArray[i]} is currently reserved by someone else.` };
+    }
   }
 
-  return { success: true, heldSeats: seatsToHold };
+  const successfullyLocked = [];
+
+  // Attempt to lock each seat
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    // try to set if not exists
+    let locked = await redis.set(key, userId, { nx: true, ex: durationSecs });
+    
+    if (!locked) {
+      // If it failed to set, it means the key exists.
+      // Check if the current user is the owner (e.g. refreshing their own hold)
+      const owner = await redis.get(key);
+      if (owner === userId) {
+        // Refresh the expiry
+        await redis.set(key, userId, { ex: durationSecs });
+        locked = true;
+      }
+    }
+
+    if (locked) {
+      successfullyLocked.push(key);
+    } else {
+      // Rollback! Someone else grabbed a seat in the middle of our loop
+      for (const lockedKey of successfullyLocked) {
+        await redis.del(lockedKey);
+      }
+      return { success: false, heldSeats: 0, reason: `Seat ${seatsToHoldArray[i]} was just taken by someone else.` };
+    }
+  }
+
+  return { success: true, heldSeats: seatsToHoldArray.length };
 }
 
 /**
  * Release a seat hold (cancel or payment failure).
+ * @param {string} eventId 
+ * @param {string} userId 
+ * @param {string[]} [seatsToRelease] - If provided, release specific seats. If omitted, release ALL seats held by this user for the event.
  */
-async function releaseHold(eventId, userId) {
+async function releaseHold(eventId, userId, seatsToRelease) {
   const redis = await getRedisClient();
-  await redis.del(`${HOLD_PREFIX}:${eventId}:${userId}`);
+  
+  if (seatsToRelease && Array.isArray(seatsToRelease)) {
+    for (const seatId of seatsToRelease) {
+      const key = `${HOLD_PREFIX}:${eventId}:${seatId}`;
+      const owner = await redis.get(key);
+      if (owner === userId) {
+        await redis.del(key);
+      }
+    }
+  } else {
+    // Release ALL seats held by this user for this event
+    const pattern = `${HOLD_PREFIX}:${eventId}:*`;
+    const keys = await redis.keys(pattern);
+    for (const key of keys) {
+      const owner = await redis.get(key);
+      if (owner === userId) {
+        await redis.del(key);
+      }
+    }
+  }
 }
 
 /**
  * Confirm hold after successful payment — removes from Redis.
  * MongoDB is the source of truth after payment.
  */
-async function confirmHold(eventId, userId) {
-  await releaseHold(eventId, userId);
+async function confirmHold(eventId, userId, seatsToConfirm) {
+  await releaseHold(eventId, userId, seatsToConfirm);
 }
 
 /**
- * Total seats currently on hold by ALL users for an event.
+ * Returns an array of specific seat IDs currently on hold by ALL users.
  */
 async function getTotalHeldSeats(eventId) {
   const redis = await getRedisClient();
@@ -76,12 +120,15 @@ async function getTotalHeldSeats(eventId) {
 
   try {
     const keys = await redis.keys(pattern);
-    if (!keys || keys.length === 0) return 0;
+    if (!keys || keys.length === 0) return [];
 
-    const values = await redis.mget(...keys);
-    return values.reduce((sum, v) => sum + (parseInt(v) || 0), 0);
+    // Extract seat IDs from keys e.g. "seat_hold:eventId:A1" -> "A1"
+    return keys.map(k => {
+      const parts = k.split(":");
+      return parts[parts.length - 1];
+    });
   } catch {
-    return 0;
+    return [];
   }
 }
 
@@ -90,8 +137,22 @@ async function getTotalHeldSeats(eventId) {
  */
 async function getUserHeldSeats(eventId, userId) {
   const redis = await getRedisClient();
-  const val = await redis.get(`${HOLD_PREFIX}:${eventId}:${userId}`);
-  return parseInt(val) || 0;
+  const pattern = `${HOLD_PREFIX}:${eventId}:*`;
+  
+  try {
+    const keys = await redis.keys(pattern);
+    let heldByMe = [];
+    for (const key of keys) {
+      const owner = await redis.get(key);
+      if (owner === userId) {
+        const parts = key.split(":");
+        heldByMe.push(parts[parts.length - 1]);
+      }
+    }
+    return heldByMe;
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -106,10 +167,13 @@ async function getEventHolds(eventId) {
     if (!keys || keys.length === 0) return [];
 
     const values = await redis.mget(...keys);
-    return keys.map((key, i) => ({
-      userId: key.split(":")[2],
-      seats: parseInt(values[i]) || 0,
-    }));
+    return keys.map((key, i) => {
+      const parts = key.split(":");
+      return {
+        userId: values[i],
+        seatId: parts[parts.length - 1],
+      };
+    });
   } catch {
     return [];
   }
