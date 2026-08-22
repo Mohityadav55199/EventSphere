@@ -11,7 +11,7 @@
 import { getRedisClient } from "./redisClient.js";
 
 const HOLD_PREFIX = "seat_hold";
-const DEFAULT_HOLD_SECONDS = 600; // 10 minutes
+const DEFAULT_HOLD_SECONDS = 1800; // 30 minutes (minimum for Stripe Checkout expires_at)
 
 /**
  * Atomically hold seats for a user on an event.
