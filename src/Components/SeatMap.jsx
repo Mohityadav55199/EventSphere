@@ -1,6 +1,6 @@
 import React from 'react';
 import { Armchair } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
+import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // Helper for tailwind classes
