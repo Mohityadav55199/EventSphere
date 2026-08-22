@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteEventbyAdmin, getEventById } from "../services/eventservices/eventapi";
-import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2 } from "lucide-react";
+import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2, Zap, Users } from "lucide-react";
 import { createOrder, verifyPayment } from "../services/bookingservices/bookingapi";
 import { useSelector } from "react-redux";
 import { toast, ToastContainer } from "react-toastify";
@@ -9,6 +9,7 @@ import "react-toastify/dist/ReactToastify.css";
 import ReviewCard from "../Components/Cards/ReviewCard";
 import ReviewForm from "../Components/Cards/PostReview";
 import ChatBox from "../Components/Chatbox/Chatbox";
+import useLiveSeatCount from "../hooks/useLiveSeatCount";
 
 function DetailEvent() {
   const { id } = useParams();
@@ -23,7 +24,23 @@ function DetailEvent() {
   const user = useSelector((state) => state.auth.user);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
-  const [AvailableSeats, setAvailableSeats] = useState(0);
+  const [isBooking, setIsBooking] = useState(false);
+
+  // ── Live seat count via Socket.io (BookMyShow-style real-time updates) ───────
+  const {
+    effectiveFreeSeats,
+    availableSeats: liveAvailableSeats,
+    heldSeats,
+    capacity,
+    isSoldOut,
+    fillingFast,
+    isLoading: seatLoading,
+  } = useLiveSeatCount(id);
+
+  // Derive display value: prefer live socket data, fall back to event data
+  const displayAvailableSeats = seatLoading
+    ? event?.availableSeats ?? 0
+    : effectiveFreeSeats;
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -31,18 +48,13 @@ function DetailEvent() {
         const response = await getEventById(id);
         const evData = response.data;
         setEvent(evData);
-        
+
         const tiers = evData?.ticketTypes?.length > 0
           ? evData.ticketTypes
           : [{ name: "Standard Pass", price: evData.Price, description: "General Admission Entry" }];
         setSelectedTier(tiers[0]);
 
-        const totalFilledSeats = (evData.attendees || []).reduce(
-          (acc, attendee) => acc + (attendee.ticketsBooked || 1),
-          0
-        );
-        setAvailableSeats(evData.capacity - totalFilledSeats);
-        if (evData.capacity > totalFilledSeats && (evData.status === "upcoming" || evData.status === "ongoing" || evData.activeStatus === "active")) {
+        if (evData.activeStatus === "active") {
           setBookingAvailable(true);
         }
       } catch (err) {
@@ -54,13 +66,28 @@ function DetailEvent() {
     fetchEvent();
   }, [id]);
 
+  // Disable booking if live seat count drops to zero
+  useEffect(() => {
+    if (!seatLoading && isSoldOut) {
+      setBookingAvailable(false);
+    }
+  }, [isSoldOut, seatLoading]);
+
   const handleBooking = async () => {
+    if (isBooking) return;
+    setIsBooking(true);
     try {
       if (!user) {
         toast.error("Please login to book tickets");
         navigate("/login");
         return;
       }
+
+      if (seats > displayAvailableSeats) {
+        toast.error(`Only ${displayAvailableSeats} seat(s) available right now.`);
+        return;
+      }
+
       const orderResponse = await createOrder(id, {
         seatsBooked: seats,
         usePoints,
@@ -73,31 +100,43 @@ function DetailEvent() {
         return;
       }
 
-      if (orderResponse.message === "Booking created successfully using wallet only" && orderResponse.statusCode === 201) {
-        toast.success("Booking created successfully using wallet points!");
+      // Wallet-only booking (no Stripe needed)
+      if (orderResponse.message === "Booking confirmed via wallet" && orderResponse.statusCode === 201) {
+        toast.success("Booking confirmed using wallet points!");
         setOpen(false);
         navigate("/profile");
         return;
       }
 
+      // Redirect to Stripe Checkout
       if (orderResponse.data?.checkoutUrl) {
         window.location.href = orderResponse.data.checkoutUrl;
         return;
       }
 
+      // Dev/mock Stripe flow — verify immediately
       await verifyPayment({
-        stripe_session_id: orderResponse.data.stripeSessionId || orderResponse.data.orderId,
+        stripe_session_id: orderResponse.data?.stripeSessionId || orderResponse.data?.orderId,
+        bookingId: orderResponse.data?.bookingId,     // pass hold booking ID
         eventId: id,
         seatsBooked: seats,
-        discount: orderResponse.data.discount || 0,
+        discount: orderResponse.data?.discount || 0,
         ticketTier: selectedTier?.name,
-        ticketPrice: selectedTier?.price || event.Price,
+        ticketPrice: selectedTier?.price || event?.Price,
       });
-      toast.success("Stripe Payment Successful & Booking Confirmed!");
+      toast.success("Payment Successful & Booking Confirmed!");
       setOpen(false);
       navigate("/profile");
     } catch (error) {
-      toast.error(error.message || "Booking failed");
+      const msg = error?.message || error?.data?.message || "Booking failed. Try again.";
+      // Show concurrency-specific messages clearly
+      if (error?.statusCode === 409 || msg.includes("seat") || msg.includes("hold")) {
+        toast.error(`⚡ ${msg}`);
+      } else {
+        toast.error(msg);
+      }
+    } finally {
+      setIsBooking(false);
     }
   };
 
@@ -122,6 +161,13 @@ function DetailEvent() {
     ? event.ticketTypes
     : [{ name: "Standard Pass", price: event?.Price, description: "General Admission Pass" }];
 
+  // ── Seat status badge config ──────────────────────────────────────────────────
+  const seatBadge = isSoldOut
+    ? { bg: "bg-red-50", text: "text-red-700", dot: "bg-red-500", label: "Sold Out", pulse: true }
+    : fillingFast
+    ? { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500", label: `${displayAvailableSeats} left — Filling Fast!`, pulse: true }
+    : { bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-500", label: `${displayAvailableSeats} / ${event?.capacity} Seats Left`, pulse: false };
+
   return (
     <div className="bg-slate-50 min-h-screen p-4 sm:p-8 text-slate-800">
       <ToastContainer position="top-right" autoClose={4000} />
@@ -129,7 +175,7 @@ function DetailEvent() {
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Main Event Card */}
         <div className="p-6 sm:p-8 bg-white/90 backdrop-blur-md shadow-lg border border-slate-200/80 rounded-3xl space-y-6">
-          
+
           {/* Banner Image */}
           <div className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden bg-slate-100 relative">
             <img
@@ -139,6 +185,11 @@ function DetailEvent() {
             />
             <div className="absolute top-4 left-4 bg-indigo-600 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow">
               {event?.category || "Featured Event"}
+            </div>
+            {/* Live seat badge on image */}
+            <div className={`absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold shadow-lg ${seatBadge.bg} ${seatBadge.text}`}>
+              <span className={`w-2 h-2 rounded-full ${seatBadge.dot} ${seatBadge.pulse ? "animate-pulse" : ""}`} />
+              {seatBadge.label}
             </div>
           </div>
 
@@ -166,11 +217,26 @@ function DetailEvent() {
               <MapIcon className="w-4 h-4 text-rose-600" />
               <span className="underline">{event?.location}</span>
             </a>
-            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full">
-              <User2Icon className="w-4 h-4 text-emerald-600" />
-              <span>{AvailableSeats} / {event?.capacity} Seats Left</span>
+
+            {/* Live seat count pill — updates in real-time via Socket.io */}
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-500 ${seatBadge.bg} ${seatBadge.text}`}>
+              <Users className="w-4 h-4" />
+              <span className="flex items-center gap-1">
+                <span className={`w-1.5 h-1.5 rounded-full ${seatBadge.dot} ${seatBadge.pulse ? "animate-pulse" : ""} inline-block`} />
+                {seatLoading ? "Checking seats..." : seatBadge.label}
+              </span>
             </div>
           </div>
+
+          {/* Held seats notice — shows when others are currently in checkout */}
+          {!seatLoading && heldSeats > 0 && !isSoldOut && (
+            <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
+              <Zap className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+              <span>
+                <strong>{heldSeats} seat{heldSeats > 1 ? "s" : ""}</strong> currently in checkout by other users — grab yours before they sell out!
+              </span>
+            </div>
+          )}
 
           {/* Tiered Ticket Selection Cards */}
           <div className="space-y-3 pt-2 border-t border-slate-100">
@@ -226,7 +292,7 @@ function DetailEvent() {
                 </button>
               )}
 
-              {BookingAvailable ? (
+              {BookingAvailable && !isSoldOut ? (
                 <button
                   onClick={() => {
                     if (!user) {
@@ -244,7 +310,7 @@ function DetailEvent() {
                   disabled
                   className="bg-slate-200 text-slate-400 py-2.5 px-5 rounded-full text-xs font-bold cursor-not-allowed"
                 >
-                  Sold Out / Not Available
+                  {isSoldOut ? "Sold Out" : "Not Available"}
                 </button>
               )}
             </div>
@@ -270,6 +336,14 @@ function DetailEvent() {
               <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
 
+            {/* Live seat warning inside modal */}
+            {fillingFast && !isSoldOut && (
+              <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
+                <Zap className="w-3.5 h-3.5 text-amber-600" />
+                Only {displayAvailableSeats} seat{displayAvailableSeats !== 1 ? "s" : ""} left — book now before they're gone!
+              </div>
+            )}
+
             {/* Selected Tier Banner */}
             <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center justify-between">
               <div>
@@ -282,14 +356,14 @@ function DetailEvent() {
             {/* Ticket Quantity */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Number of Tickets (Max {AvailableSeats})
+                Number of Tickets (Max {displayAvailableSeats})
               </label>
               <input
                 type="number"
                 min="1"
-                max={AvailableSeats}
+                max={displayAvailableSeats}
                 value={seats}
-                onChange={(e) => setSeats(Math.max(1, Number(e.target.value)))}
+                onChange={(e) => setSeats(Math.min(Math.max(1, Number(e.target.value)), displayAvailableSeats))}
                 className="border border-slate-200 bg-slate-50 rounded-xl px-3 py-2.5 w-full text-sm outline-none focus:border-indigo-500 font-bold"
               />
             </div>
@@ -340,9 +414,14 @@ function DetailEvent() {
               </button>
               <button
                 onClick={handleBooking}
-                className="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-200"
+                disabled={isBooking || isSoldOut}
+                className={`px-6 py-2.5 rounded-full text-white text-xs font-bold shadow-md transition ${
+                  isBooking || isSoldOut
+                    ? "bg-slate-300 cursor-not-allowed"
+                    : "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200"
+                }`}
               >
-                Proceed to Pay
+                {isBooking ? "Processing..." : "Proceed to Pay"}
               </button>
             </div>
           </div>

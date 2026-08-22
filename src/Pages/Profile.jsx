@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   getUserProfile,
   updateUserProfile,
   resetPassword,
 } from "../services/authservices/authapi";
-import { cancelBooking, getMyBookings } from "../services/bookingservices/bookingapi";
+import { cancelBooking, getMyBookings, verifyPayment } from "../services/bookingservices/bookingapi";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { User, Mail, Wallet, Calendar, Lock, Pencil, X, Download, QrCode } from "lucide-react";
@@ -15,6 +16,47 @@ function Profile() {
   const [user, setUser] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // ── Handle Stripe redirect back to /profile?session_id=...&booking_id=... ────
+  useEffect(() => {
+    const sessionId = searchParams.get("session_id");
+    const bookingId = searchParams.get("booking_id");
+    const eventId   = searchParams.get("event_id");
+    const seats     = searchParams.get("seats");
+    const discount  = searchParams.get("discount");
+    const tierName  = searchParams.get("tier");
+    const tierPrice = searchParams.get("price");
+
+    if (!sessionId) return;
+
+    // Clear URL params immediately so refreshing won't re-trigger
+    setSearchParams({});
+
+    const confirm = async () => {
+      try {
+        await verifyPayment({
+          stripe_session_id: sessionId,
+          bookingId: bookingId || undefined,
+          eventId,
+          seatsBooked: Number(seats) || 1,
+          discount: Number(discount) || 0,
+          ticketTier: tierName || "Standard Pass",
+          ticketPrice: Number(tierPrice) || 0,
+        });
+        toast.success("🎉 Payment successful! Your tickets are confirmed.");
+        // Refresh bookings list
+        const myBookings = await getMyBookings();
+        setBookings(myBookings?.data || []);
+      } catch (err) {
+        const msg = err?.message || err?.data?.message || "Payment verification failed";
+        toast.error(msg);
+      }
+    };
+
+    confirm();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Edit form states
   const [isEditing, setIsEditing] = useState(false);

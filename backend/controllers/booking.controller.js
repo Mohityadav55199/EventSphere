@@ -233,7 +233,7 @@ const createOrder = asyncHandler(async (req, res) => {
         ticketTier: selectedTierName,
         ticketPrice: String(unitPrice),
       },
-      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/profile?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/profile?session_id={CHECKOUT_SESSION_ID}&booking_id=${pendingBooking._id}&event_id=${eventId}&seats=${seatsBooked}&discount=${discount}&tier=${encodeURIComponent(selectedTierName)}&price=${unitPrice}`,
       cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/event/${eventId}`,
       expires_at: Math.floor(Date.now() / 1000) + DEFAULT_HOLD_SECONDS, // Stripe session also expires
     });
