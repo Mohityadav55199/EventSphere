@@ -5,6 +5,7 @@ import { initSocket } from "./socket.js";
 import http from "http";
 import { autoSeedEventsIfEmpty } from "./utils/autoSeed.js";
 import { startHoldExpiryJob } from "./jobs/holdExpiry.js";
+import { autoMigrateAvailableSeats } from "./utils/autoMigrateAvailableSeats.js";
 
 dotenv.config({
   path: "./.env",
@@ -14,6 +15,10 @@ connectDB()
 .then(async () => {
     // Automatically seed events if database is empty (e.g. fresh MongoDB Atlas deployment)
     await autoSeedEventsIfEmpty();
+
+    // Backfill availableSeats on any events that predate the concurrency update
+    // Safe to run every boot — skips events already migrated
+    await autoMigrateAvailableSeats();
 
     const port = process.env.PORT || 5000;
     const server = http.createServer(app);
