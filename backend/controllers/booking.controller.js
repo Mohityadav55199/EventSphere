@@ -42,6 +42,7 @@ import QRcode from "qrcode";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { getIO } from "../socket.js";
+import { sendTicketConfirmationEmail } from "../utils/emailService.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_dummy_stripe_secret_key_12345");
 
@@ -80,7 +81,7 @@ async function generateSecureQRCode(booking) {
 // ─── createOrder ─────────────────────────────────────────────────────────────
 const createOrder = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
-  const { selectedSeats, usePoints, couponCode, ticketTier } = req.body;
+  const { selectedSeats, usePoints, couponCode, ticketTier, paymentGateway = "stripe" } = req.body;
 
   if (!eventId || !Array.isArray(selectedSeats) || selectedSeats.length < 1) {
     throw new ApiError(400, "Event ID and an array of selected seats are required");
@@ -178,6 +179,11 @@ const createOrder = asyncHandler(async (req, res) => {
     const qrBooking = await generateSecureQRCode(booking);
     await qrBooking.save();
 
+    // ── Email Confirmation Dispatch ──────────────────────────────────────────
+    sendTicketConfirmationEmail({ user, event, booking: qrBooking }).catch((emailErr) => {
+      console.warn("⚠️ Ticket email dispatch error:", emailErr.message);
+    });
+
     // ── LAYER 3: Broadcast seat update ─────────────────────────────────────
     await emitSeatUpdate(eventId);
 
@@ -190,7 +196,6 @@ const createOrder = asyncHandler(async (req, res) => {
     );
   }
 
-  // ── Normal Stripe flow ──────────────────────────────────────────────────────
   // Create a pending Booking doc NOW (with status:"hold") so the expiry job
   // can restore seats if the user abandons without paying.
   const pendingBooking = await Booking.create({
@@ -206,10 +211,59 @@ const createOrder = asyncHandler(async (req, res) => {
     holdExpiresAt,
   });
 
+  // ── Regional Gateway: Razorpay (UPI, Google Pay UPI, PhonePe, NetBanking) ─
+  if (paymentGateway === "razorpay") {
+    try {
+      const Razorpay = (await import("razorpay")).default;
+      const razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_dummy_key_123",
+        key_secret: process.env.RAZORPAY_KEY_SECRET || "dummy_secret_123",
+      });
+
+      const razorpayOrder = await razorpay.orders.create({
+        amount: Math.round(amountToPay * 100), // in paise
+        currency: "INR",
+        receipt: `rcpt_${pendingBooking._id.toString().slice(-10)}`,
+        notes: {
+          bookingId: String(pendingBooking._id),
+          eventId: String(eventId),
+        },
+      });
+
+      pendingBooking.razorpayOrderId = razorpayOrder.id;
+      await pendingBooking.save();
+
+      return res.status(200).json(
+        new ApiResponse(200, {
+          gateway: "razorpay",
+          orderId: razorpayOrder.id,
+          amount: razorpayOrder.amount,
+          currency: razorpayOrder.currency,
+          keyId: process.env.RAZORPAY_KEY_ID || "rzp_test_dummy_key_123",
+          bookingId: pendingBooking._id,
+          eventTitle: event.title,
+          amountToPay,
+          discount,
+          selectedTier: selectedTierName,
+          unitPrice,
+          user: {
+            name: user.name,
+            email: user.email,
+          },
+        }, "Razorpay order initialized successfully")
+      );
+    } catch (err) {
+      await releaseHold(String(eventId), String(req.user._id), selectedSeats);
+      await Booking.findByIdAndDelete(pendingBooking._id);
+      throw new ApiError(500, `Razorpay API error: ${err.message}`);
+    }
+  }
+
+  // ── International Gateway: Stripe (Apple Pay, Google Pay, Cards) ──────────
   let session;
   try {
     session = await stripe.checkout.sessions.create({
-      payment_method_types: ["card"],
+      // Omitting payment_method_types allows Stripe to automatically dynamically enable Apple Pay & Google Pay
       line_items: [
         {
           price_data: {
@@ -367,9 +421,30 @@ const verifyPayment = asyncHandler(async (req, res) => {
   }
   await event.save();
 
+  // ── Verify Razorpay signature if present ──────────────────────────────────
+  if (razorpay_order_id && razorpay_payment_id && req.body.razorpay_signature) {
+    const generatedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "dummy_secret_123")
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+    if (generatedSignature !== req.body.razorpay_signature) {
+      throw new ApiError(400, "Invalid Razorpay payment signature verification failed");
+    }
+  }
+
   // ── Generate QR code ────────────────────────────────────────────────────────
   booking = await generateSecureQRCode(booking);
+  if (razorpay_order_id) {
+    booking.razorpayOrderId = razorpay_order_id;
+    booking.razorpayPaymentId = razorpay_payment_id;
+    booking.razorpaySignature = req.body.razorpay_signature;
+  }
   await booking.save();
+
+  // ── Email Confirmation Dispatch ──────────────────────────────────────────
+  sendTicketConfirmationEmail({ user, event, booking }).catch((emailErr) => {
+    console.warn("⚠️ Ticket email dispatch error:", emailErr.message);
+  });
 
   // ── LAYER 3: Broadcast final seat count ─────────────────────────────────────
   await emitSeatUpdate(eventId);

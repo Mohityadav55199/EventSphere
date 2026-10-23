@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteEventbyAdmin, getEventById } from "../services/eventservices/eventapi";
-import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2, Zap, Users } from "lucide-react";
-import { createOrder } from "../services/bookingservices/bookingapi";
+import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2, Zap, Users, CreditCard, Smartphone } from "lucide-react";
+import { createOrder, verifyPayment } from "../services/bookingservices/bookingapi";
 import { useSelector } from "react-redux";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -23,6 +23,7 @@ function DetailEvent() {
   const [couponCode, setCouponCode] = useState("");
   const [selectedTier, setSelectedTier] = useState(null);
   const user = useSelector((state) => state.auth.user);
+  const [paymentGateway, setPaymentGateway] = useState("stripe");
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const [isBooking, setIsBooking] = useState(false);
@@ -98,6 +99,7 @@ function DetailEvent() {
         usePoints,
         couponCode,
         ticketTier: selectedTier?.name,
+        paymentGateway,
       });
 
       if (!orderResponse) {
@@ -105,24 +107,84 @@ function DetailEvent() {
         return;
       }
 
-      // Wallet-only booking (no Stripe needed)
+      // Wallet-only booking
       if (orderResponse.message === "Booking confirmed via wallet" && orderResponse.statusCode === 201) {
-        toast.success("Booking confirmed using wallet points!");
+        toast.success("Booking confirmed using wallet points! Confirmation email sent 🎉");
         setOpen(false);
         navigate("/profile");
         return;
       }
 
-      // Redirect to Stripe Checkout
+      // Razorpay Regional (UPI / Google Pay UPI / PhonePe / NetBanking / Cards)
+      if (orderResponse.data?.gateway === "razorpay") {
+        const loadRazorpayScript = () => {
+          return new Promise((resolve) => {
+            if (window.Razorpay) return resolve(true);
+            const script = document.createElement("script");
+            script.src = "https://checkout.razorpay.com/v1/checkout.js";
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+            document.body.appendChild(script);
+          });
+        };
+
+        const loaded = await loadRazorpayScript();
+        if (!loaded) {
+          toast.error("Unable to load Razorpay SDK. Please check your internet connection.");
+          return;
+        }
+
+        const rzpOptions = {
+          key: orderResponse.data.keyId,
+          amount: orderResponse.data.amount,
+          currency: orderResponse.data.currency,
+          name: "EventSphere",
+          description: `Tickets for ${orderResponse.data.eventTitle}`,
+          order_id: orderResponse.data.orderId,
+          prefill: {
+            name: orderResponse.data.user?.name || "",
+            email: orderResponse.data.user?.email || "",
+          },
+          theme: {
+            color: "#4f46e5",
+          },
+          handler: async function (response) {
+            try {
+              toast.info("Verifying Razorpay payment...");
+              await verifyPayment({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+                bookingId: orderResponse.data.bookingId,
+                eventId: id,
+                selectedSeats,
+                discount: orderResponse.data.discount,
+                ticketTier: orderResponse.data.selectedTier,
+                ticketPrice: orderResponse.data.unitPrice,
+              });
+              toast.success("Payment confirmed! Tickets and confirmation email dispatched 🎉");
+              setOpen(false);
+              navigate("/profile");
+            } catch (verifyErr) {
+              toast.error(verifyErr.message || "Payment verification failed.");
+            }
+          },
+        };
+
+        const rzp = new window.Razorpay(rzpOptions);
+        rzp.open();
+        return;
+      }
+
+      // Stripe (Apple Pay / Google Pay / Global Cards)
       if (orderResponse.data?.checkoutUrl) {
         window.location.href = orderResponse.data.checkoutUrl;
         return;
       }
 
-      toast.error("Stripe Checkout URL not provided by the server.");
+      toast.error("Payment checkout URL not provided by the server.");
     } catch (error) {
       const msg = error?.message || error?.data?.message || "Booking failed. Try again.";
-      // Show concurrency-specific messages clearly
       if (error?.statusCode === 409 || msg.includes("seat") || msg.includes("hold")) {
         toast.error(`⚡ ${msg}`);
       } else {
@@ -391,6 +453,52 @@ function DetailEvent() {
                 Apply Wallet Cashback
               </label>
               <span className="text-xs font-extrabold text-indigo-600">{user?.walletPoints || 0} pts</span>
+            </div>
+
+            {/* Payment Gateway Selector */}
+            <div className="pt-2">
+              <label className="block text-xs font-bold text-slate-700 mb-2">
+                Select Payment Method
+              </label>
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setPaymentGateway("stripe")}
+                  className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition cursor-pointer ${
+                    paymentGateway === "stripe"
+                      ? "border-indigo-600 bg-indigo-50/80 text-indigo-900 ring-1 ring-indigo-600 shadow-sm"
+                      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <CreditCard className="w-4 h-4 text-indigo-600" />
+                    {paymentGateway === "stripe" && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />}
+                  </div>
+                  <div className="mt-1.5">
+                    <div className="text-xs font-bold">Stripe / Global</div>
+                    <div className="text-[10px] text-slate-500">Apple Pay, Google Pay, Cards</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentGateway("razorpay")}
+                  className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition cursor-pointer ${
+                    paymentGateway === "razorpay"
+                      ? "border-indigo-600 bg-indigo-50/80 text-indigo-900 ring-1 ring-indigo-600 shadow-sm"
+                      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <Smartphone className="w-4 h-4 text-emerald-600" />
+                    {paymentGateway === "razorpay" && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-600" />}
+                  </div>
+                  <div className="mt-1.5">
+                    <div className="text-xs font-bold">Razorpay / UPI</div>
+                    <div className="text-[10px] text-slate-500">UPI, PhonePe, GPay, NetBanking</div>
+                  </div>
+                </button>
+              </div>
             </div>
 
             {/* Total Estimated Price */}

@@ -1,5 +1,9 @@
-import connectDB from "./config/db.js";
 import dotenv from "dotenv";
+dotenv.config({
+  path: "./.env",
+});
+
+import connectDB from "./config/db.js";
 import app from "./app.js";
 import { initSocket } from "./socket.js";
 import http from "http";
@@ -7,31 +11,34 @@ import { autoSeedEventsIfEmpty } from "./utils/autoSeed.js";
 import { startHoldExpiryJob } from "./jobs/holdExpiry.js";
 import { autoMigrateAvailableSeats } from "./utils/autoMigrateAvailableSeats.js";
 
-dotenv.config({
-  path: "./.env",
+const port = process.env.PORT || 5000;
+const server = http.createServer(app);
+initSocket(server);
+
+// Start server immediately so cloud platforms (Render, Railway, etc.) detect open port right away
+server.listen(port, "0.0.0.0", () => {
+  console.log(`🚀 EventSphere Server started and listening on port ${port}`);
+  console.log(`🌐 Server available at http://0.0.0.0:${port}`);
 });
 
+// Initialize database connection and post-connection background jobs
 connectDB()
-.then(async () => {
-    // Automatically seed events if database is empty (e.g. fresh MongoDB Atlas deployment)
-    await autoSeedEventsIfEmpty();
+  .then(async () => {
+    try {
+      // Automatically seed events if database is empty (e.g. fresh MongoDB Atlas deployment)
+      await autoSeedEventsIfEmpty();
 
-    // Backfill availableSeats on any events that predate the concurrency update
-    // Safe to run every boot — skips events already migrated
-    await autoMigrateAvailableSeats();
+      // Backfill availableSeats on any events that predate the concurrency update
+      await autoMigrateAvailableSeats();
 
-    const port = process.env.PORT || 5000;
-    const server = http.createServer(app);
-    initSocket(server);
+      // Start the seat hold expiry cron job (cleans up abandoned checkouts every 60s)
+      startHoldExpiryJob();
+    } catch (err) {
+      console.error("Post-connection setup warning:", err.message);
+    }
+  })
+  .catch((err) => {
+    console.error("MongoDB initial connection error:", err.message);
+  });
 
-    // Start the seat hold expiry cron job (cleans up abandoned checkouts every 60s)
-    startHoldExpiryJob();
-
-    server.listen(port, () => {
-      console.log("Server is started and running at port", port);
-      console.log("Server is running at http://localhost:" + port);
-    });
-})
-.catch((err) => {
-  console.log("MongoDB Connection failed!!!", err);
-});
+export { server };

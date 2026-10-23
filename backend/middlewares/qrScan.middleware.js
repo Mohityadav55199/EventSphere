@@ -24,19 +24,22 @@ const qrScanMiddleware = asyncHandler(async (req, res, next) => {
       // Extract bookingId from payload
       const bookingId = payload.split(":")[0];
 
-      const booking = await Booking.findById(bookingId);
+      const booking = await Booking.findById(bookingId)
+        .populate("user", "name email")
+        .populate("event", "title location eventDate");
+
       if (!booking) {
         throw new ApiError(404, "Booking not found");
       }
 
       if (booking.checkedIn) {
-        throw new ApiError(400, "User already checked in");
+        throw new ApiError(400, `Attendee already checked in at ${new Date(booking.updatedAt).toLocaleTimeString()}`);
       }
 
       booking.checkedIn = true;
       await booking.save();
 
-        res.status(200).json(new ApiResponse(200, booking, "Check-in successful"));
+      res.status(200).json(new ApiResponse(200, booking, "Check-in successful! Attendee admitted."));
     } catch (error) {
       console.error(error);
       throw new ApiError(403, error?.message || "Invalid QR code scan");

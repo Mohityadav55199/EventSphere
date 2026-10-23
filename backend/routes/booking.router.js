@@ -33,6 +33,6 @@ bookingRouter.get("/admin/event-bookings/:eventId", authMiddleware, authorizeRol
 bookingRouter.get("/organizer/event-bookings/:eventId", authMiddleware, authorizeRoles("organizer"), getEventBookings);
 
 // ── Check-in (QR scan) ────────────────────────────────────────────────────────
-bookingRouter.post("/checkin", authMiddleware, authorizeRoles("organizer"), qrScanMiddleware);
+bookingRouter.post("/checkin", authMiddleware, authorizeRoles("organizer", "admin"), qrScanMiddleware);
 
 export default bookingRouter;

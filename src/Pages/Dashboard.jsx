@@ -2,16 +2,18 @@ import React, { useEffect, useState } from "react";
 import { getEventAnalytics, updateEvent, getMyEvents, cancelEvent } from "../services/eventservices/eventapi";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { Calendar, Trash2, Edit, Users, Ticket, IndianRupee, TrendingUp, Award } from "lucide-react";
+import { Calendar, Trash2, Edit, Users, Ticket, IndianRupee, TrendingUp, Award, Camera } from "lucide-react";
 import { IconChartBar } from "@tabler/icons-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import UpdateEventModal from "../Components/UpdateEventForm";
+import QRScannerModal from "../Components/QRScannerModal";
 
 function Dashboard() {
   const [events, setEvents] = useState([]);
   const [analytics, setAnalytics] = useState({});
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
 
   useEffect(() => {
@@ -83,6 +85,13 @@ function Dashboard() {
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">Real-time metrics, ticket sales, and event performance overview</p>
           </div>
+          <button
+            onClick={() => setIsScannerOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-bold text-xs shadow-md shadow-indigo-600/25 transition cursor-pointer"
+          >
+            <Camera className="w-4 h-4" />
+            <span>Scan Attendee Tickets (Live QR Check-In)</span>
+          </button>
         </div>
 
         {/* Executive Summary Cards */}
@@ -233,6 +242,11 @@ function Dashboard() {
             onUpdate={handleUpdate}
           />
         )}
+
+        <QRScannerModal 
+          isOpen={isScannerOpen} 
+          onClose={() => setIsScannerOpen(false)} 
+        />
 
       </div>
     </div>

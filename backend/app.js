@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
@@ -57,9 +58,12 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
+    const dbStates = ["disconnected", "connected", "connecting", "disconnecting"];
+    const dbStatus = dbStates[mongoose.connection.readyState] || "unknown";
     res.status(200).json({
         success: true,
         status: "ok",
+        database: dbStatus,
         service: "EventSphere API",
         uptime: `${Math.floor(process.uptime())}s`,
         timestamp: new Date().toISOString()
