@@ -127,9 +127,10 @@ function Profile() {
   const handleDownloadPDF = (bookingId, eventTitle) => {
     const element = document.getElementById(`ticket-${bookingId}`);
     if (!element) return;
+    const cleanTitle = eventTitle ? `${eventTitle.replace(/[^a-zA-Z0-9]/g, "_")}_` : "";
     const opt = {
       margin: 0.4,
-      filename: `EventSphere_Ticket_${bookingId.slice(-6)}.pdf`,
+      filename: `EventSphere_${cleanTitle}Ticket_${bookingId.slice(-6)}.pdf`,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }

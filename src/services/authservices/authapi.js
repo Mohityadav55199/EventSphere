@@ -1,4 +1,3 @@
-import { useDispatch } from "react-redux";
 import API from "../../config/axios";
 
 export const loginUser = async ({email, password}) => {

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteEventbyAdmin, getEventById } from "../services/eventservices/eventapi";
 import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2, Zap, Users } from "lucide-react";
-import { createOrder, verifyPayment } from "../services/bookingservices/bookingapi";
+import { createOrder } from "../services/bookingservices/bookingapi";
 import { useSelector } from "react-redux";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -30,10 +30,8 @@ function DetailEvent() {
   // ── Live seat count via Socket.io (BookMyShow-style real-time updates) ───────
   const {
     effectiveFreeSeats,
-    availableSeats: liveAvailableSeats,
     bookedSeats,
     heldSeats,
-    capacity,
     isSoldOut,
     fillingFast,
     isLoading: seatLoading,
@@ -59,7 +57,7 @@ function DetailEvent() {
         if (evData.activeStatus === "active") {
           setBookingAvailable(true);
         }
-      } catch (err) {
+      } catch {
         setError("Failed to load event details.");
       } finally {
         setLoading(false);

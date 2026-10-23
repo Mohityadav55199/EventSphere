@@ -16,18 +16,18 @@ function ReviewCard({ eventId }) {
   }, []);
 
   // ✅ Fetch reviews
-  const fetchReviews = async () => {
+  const fetchReviews = React.useCallback(async () => {
     try {
       const res = await getEventReviews(eventId);
       setReviewsData(res.data); // { average, totalReviews, reviews }
     } catch (error) {
       console.error("Error fetching reviews:", error);
     }
-  };
+  }, [eventId]);
 
   useEffect(() => {
     if (eventId) fetchReviews();
-  }, [eventId]);
+  }, [eventId, fetchReviews]);
 
   // ✅ Delete review
   const handleDelete = async (reviewId) => {
@@ -120,7 +120,7 @@ function ReviewCard({ eventId }) {
 
                 {/* User */}
                 <p className="mt-1 text-xs text-gray-500 text-right">
-                  – {(review.user?.name).toUpperCase() || "Anonymous"}
+                  – {(review.user?.name || "Anonymous").toUpperCase()}
                 </p>
 
                 {/* Edit + Delete buttons (only if current user is the author) */}

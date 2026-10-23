@@ -1,7 +1,6 @@
 "use client";
 import React from "react";
 import { motion } from "framer-motion";
-import { cn } from "../lib/utils";
 import { IconAnalyzeFilled, IconHeart, IconRouteAltLeft } from "@tabler/icons-react";
 import { CreditCard, Star, TicketIcon, Wallet, ChartArea, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";

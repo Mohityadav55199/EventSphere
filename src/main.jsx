@@ -19,15 +19,7 @@ const Contact = lazy(() => import('./Pages/Contact'));
 const Dashboard = lazy(() => import('./Pages/Dashboard'));
 const AddEvent = lazy(() => import('./Pages/AddEvent'));
 const DetailEvent = lazy(() => import('./Pages/DetailEvent'));
-
-const PageLoader = () => (
-  <div className="flex justify-center items-center h-screen bg-slate-50 text-indigo-600 font-semibold text-sm">
-    <div className="flex items-center gap-2">
-      <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      Loading Page...
-    </div>
-  </div>
-);
+import PageLoader from './Components/PageLoader';
 
 const router = createBrowserRouter(
   createRoutesFromElements(

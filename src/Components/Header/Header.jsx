@@ -54,7 +54,7 @@ export default function Header() {
   useEffect(() => {
     setSearchQuery("");
     setFilteredEvents([]);
-  }, [location.pathname]);
+  }, [location.pathname, setSearchQuery, setFilteredEvents]);
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 shadow-sm transition-all">

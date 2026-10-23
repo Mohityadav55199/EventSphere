@@ -24,11 +24,11 @@ function Dashboard() {
           try {
             const a = await getEventAnalytics(ev._id);
             setAnalytics((prev) => ({ ...prev, [ev._id]: a.data }));
-          } catch (e) {
+          } catch {
             console.log("Analytics fetch error for event", ev._id);
           }
         }
-      } catch (err) {
+      } catch {
         toast.error("Failed to load organizer dashboard events");
       } finally {
         setLoading(false);
