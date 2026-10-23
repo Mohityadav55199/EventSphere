@@ -5,11 +5,12 @@ import { useDispatch } from "react-redux";
 import { setCredentials } from "../../store/authslice";
 import { Link, useNavigate } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
-import "react-toastify/dist/ReactToastify.css";
-import { Mail, Lock, Eye, EyeOff, Sparkles, ArrowRight, ShieldCheck, Loader2 } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Sparkles, ArrowRight, ShieldCheck, Loader2, CloudLightning } from "lucide-react";
+import { baseURL } from "../../config/baseURL.js";
 
 function Login() {
   const [showPassword, setShowPassword] = useState(false);
+  const [isWakingServer, setIsWakingServer] = useState(false);
   const {
     register,
     handleSubmit,
@@ -18,6 +19,23 @@ function Login() {
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    // Proactively wake up backend server on Render free tier
+    fetch(`${baseURL}/health`).catch(() => {});
+  }, []);
+
+  React.useEffect(() => {
+    let timer;
+    if (isSubmitting) {
+      timer = setTimeout(() => {
+        setIsWakingServer(true);
+      }, 1500);
+    } else {
+      setIsWakingServer(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isSubmitting]);
 
   const onSubmit = async (data) => {
     try {
@@ -140,6 +158,14 @@ function Login() {
               </>
             )}
           </button>
+
+          {/* Waking Server Feedback */}
+          {isWakingServer && (
+            <div className="p-3 rounded-xl bg-indigo-950/70 border border-indigo-500/30 text-indigo-200 text-xs flex items-center justify-center gap-2 animate-pulse">
+              <CloudLightning className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Connecting to cloud server... (Render free tier spin-up in progress)</span>
+            </div>
+          )}
 
           {/* Security Badge */}
           <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 pt-1">

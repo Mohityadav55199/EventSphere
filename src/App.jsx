@@ -6,11 +6,17 @@ import Footer from "./Components/Footer/Footer";
 import { getUserProfile } from "./services/authservices/authapi";
 import { logout, setCredentials } from "./store/authslice";
 import ScrollToTop from "./ScrollToTop";
+import { baseURL } from "./config/baseURL.js";
 
 function App() {
   const [loading, setLoading] = useState(true);
   const dispatch = useDispatch();
   const accessToken = useSelector((state) => state.auth.accessToken);
+
+  useEffect(() => {
+    // Proactively warm up cloud backend on Render so requests don't hit cold start latency
+    fetch(`${baseURL}/health`).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const token = accessToken || localStorage.getItem("accessToken");

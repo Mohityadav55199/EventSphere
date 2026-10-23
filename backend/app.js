@@ -36,12 +36,13 @@ const bookingLimiter = rateLimit({
     skip: (req) => req.method === "GET", // seat availability GETs are not rate-limited
 });
 
-// Dynamic CORS configuration allowing credentials for Vercel & localhost
+// Dynamic CORS configuration allowing credentials for Vercel & localhost with 24h preflight cache
 app.use(cors({
     origin: true,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    maxAge: 86400
 }));
 
 app.use(express.json({ limit: "16kb" }));

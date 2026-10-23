@@ -4,49 +4,62 @@ import { ApiError } from "../utils/ApiError.js";
 import jwt from "jsonwebtoken";
 import { ApiResponse } from "../utils/ApiResponse.js";
 
-const genearteAccessTokenAndRefreshToken = async (userID) => {
+const genearteAccessTokenAndRefreshToken = async (userOrId) => {
     try {
-        const user = await User.findById(userID)
-        const accessToken = await user.genearteAccessToken();
-        // console.log("Access Token:", accessToken);
-        const refreshToken = await user.refreshAccessToken();
-        // console.log("Refresh Token:", refreshToken);
+        const user = (typeof userOrId === "object" && userOrId !== null && typeof userOrId.genearteAccessToken === "function")
+            ? userOrId
+            : await User.findById(userOrId);
+        if (!user) {
+            throw new ApiError(404, "User not found for token generation");
+        }
+        const accessToken = user.genearteAccessToken();
+        const refreshToken = user.refreshAccessToken();
         user.refreshToken = refreshToken;
         await user.save({ validateBeforeSave: false });
         return { accessToken, refreshToken };
 
     } catch (error) {
-        throw new ApiError(500, "Error generating tokens");
-        
+        throw new ApiError(error.statusCode || 500, error.message || "Error generating tokens");
     }
 }
 const registerUser = asyncHandler(async(req, res) => {
     const { name, email, password, role } = req.body;
     if(
-        [name,email,password].some((field)=> field?.trim() === "")
+        [name, email, password].some((field)=> !field || field?.trim() === "")
     ){
         throw new ApiError(400, "All fields are required");
     }
-    const existingUser = await User.findOne({email})
+    const cleanEmail = email.toLowerCase().trim();
+    const existingUser = await User.findOne({ email: cleanEmail });
     if(existingUser){
         throw new ApiError(400, "User already exists with this email");
     }
     const user = await User.create({
-        name,
-        email,
+        name: name.trim(),
+        email: cleanEmail,
         password,
         role: role || "attendee" // Default to attendee if no role is provided
-    })
-    const { accessToken,  refreshToken } = await genearteAccessTokenAndRefreshToken(user._id)
-    const createdUser = await User.findById(user._id).select("-password");
-    if(!createdUser) {
-        throw new ApiError(500, "User creation failed");
-    }
-    user.refreshToken = refreshToken;
-    await user.save({ validateBeforeSave: false });
-    res.status(201).json(
-        new ApiResponse(201, { user: createdUser, accessToken, refreshToken }, "User registered successfully", createdUser, "User registered successfully")
-    )   
+    });
+
+    const { accessToken, refreshToken } = await genearteAccessTokenAndRefreshToken(user);
+    const createdUser = user.toObject();
+    delete createdUser.password;
+    delete createdUser.refreshToken;
+
+    const options = {
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    };
+
+    return res
+    .status(201)
+    .cookie("accessToken", accessToken, options)
+    .cookie("refreshToken", refreshToken, options)
+    .json(
+        new ApiResponse(201, { user: createdUser, accessToken, refreshToken }, "User registered successfully")
+    );   
 })
 
 const loginUser = asyncHandler(async(req, res) => {
@@ -54,7 +67,8 @@ const loginUser = asyncHandler(async(req, res) => {
     if (!email || !password) {
         throw new ApiError(400, "Both email and password are required");
     }
-    const user = await User.findOne({email})
+    const cleanEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: cleanEmail });
     if(!user){
         throw new ApiError(401, "User not found with this email");
     }
@@ -62,12 +76,19 @@ const loginUser = asyncHandler(async(req, res) => {
     if(!isPasswordCorrect){
         throw new ApiError(401, "Incorrect password");
     }
-    const { accessToken,  refreshToken } = await genearteAccessTokenAndRefreshToken(user._id)
-    const loggedInUser = await User.findById(user._id).select("-password -refreshToken");
+
+    const { accessToken, refreshToken } = await genearteAccessTokenAndRefreshToken(user);
+    const loggedInUser = user.toObject();
+    delete loggedInUser.password;
+    delete loggedInUser.refreshToken;
+
     const options = {
         httpOnly: true,
-        secure: true
-    }
+        secure: true,
+        sameSite: "none",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    };
+
     return res
     .status(200)
     .cookie("accessToken", accessToken, options)
@@ -80,7 +101,7 @@ const loginUser = asyncHandler(async(req, res) => {
          },
          "User logged in successfully"
         )
-    )
+    );
 })
 
 const logoutUser = asyncHandler(async(req, res) => {
