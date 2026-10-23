@@ -56,6 +56,16 @@ app.get("/", (req, res) => {
     });
 });
 
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        success: true,
+        status: "ok",
+        service: "EventSphere API",
+        uptime: `${Math.floor(process.uptime())}s`,
+        timestamp: new Date().toISOString()
+    });
+});
+
 app.use('/api/v1/users', authLimiter, userRouter);
 app.use('/api/v1/events', eventRouter);
 app.use('/api/v1/bookings', bookingLimiter, bookingRouter);

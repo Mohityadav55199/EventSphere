@@ -1,0 +1,36 @@
+name: Keep Render Server Awake
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render free-tier 15-minute inactivity spin-down
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub Actions tab
+
+jobs:
+  ping-server:
+    name: Ping EventSphere Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Execute Keep-Alive Health Ping
+        env:
+          BACKEND_URL: ${{ secrets.RENDER_BACKEND_URL || vars.RENDER_BACKEND_URL || 'https://eventsphere-backend-nhzy.onrender.com' }}
+        run: |
+          node scripts/keep-alive.js
+
+      - name: Publish Action Summary
+        if: always()
+        run: |
+          echo "### 🚀 EventSphere Keep-Alive Report" >> $GITHUB_STEP_SUMMARY
+          echo "- **Timestamp**: $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target URL**: ${{ secrets.RENDER_BACKEND_URL || vars.RENDER_BACKEND_URL || 'https://eventsphere-backend-nhzy.onrender.com' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Result**: ${{ job.status == 'success' && '🟢 Server Active' || '🔴 Failed' }}" >> $GITHUB_STEP_SUMMARY
