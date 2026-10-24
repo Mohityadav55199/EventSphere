@@ -349,6 +349,7 @@ const createOrder = asyncHandler(async (req, res) => {
       discount,
       holdExpiresAt,
       remainingPoints: user.walletPoints - discount,
+      isSimulated: session.id.startsWith("sim_cs_"),
     }, "Checkout session created. Seats held for 10 minutes.")
   );
 });

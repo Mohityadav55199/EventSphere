@@ -32,6 +32,7 @@ function DetailEvent() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const [isBooking, setIsBooking] = useState(false);
+  const [sandboxOrder, setSandboxOrder] = useState(null);
   useDocumentTitle(event?.title);
 
   const { isSaved, toggle: toggleWishlist } = useWishlist();
@@ -132,31 +133,25 @@ function DetailEvent() {
         return;
       }
 
-      // Razorpay Regional (UPI / Google Pay UPI / PhonePe / NetBanking / Cards)
-      if (orderResponse.data?.gateway === "razorpay") {
-        if (orderResponse.data.isSimulated) {
-          toast.info("⚡ Processing Sandbox Reservation...");
-          try {
-            await verifyPayment({
-              razorpay_order_id: orderResponse.data.orderId,
-              razorpay_payment_id: `pay_sim_${Date.now()}`,
-              razorpay_signature: `sig_sim_${Date.now()}`,
-              bookingId: orderResponse.data.bookingId,
-              eventId: id,
-              selectedSeats,
-              discount: orderResponse.data.discount,
-              ticketTier: orderResponse.data.selectedTier,
-              ticketPrice: orderResponse.data.unitPrice,
-            });
-            toast.success("Payment confirmed! Tickets and confirmation email dispatched 🎉");
-            setOpen(false);
-            navigate("/profile");
-          } catch (vErr) {
-            toast.error(vErr?.message || "Payment verification failed.");
-          }
-          return;
-        }
+      // Sandbox Test Simulation: Show interactive test gateway modal instead of auto-confirming
+      if (orderResponse.data?.isSimulated) {
+        setIsBooking(false);
+        setSandboxOrder({
+          gateway: orderResponse.data.gateway || paymentGateway,
+          orderId: orderResponse.data.orderId,
+          bookingId: orderResponse.data.bookingId,
+          amountToPay: orderResponse.data.amountToPay ?? finalPayable,
+          checkoutUrl: orderResponse.data.checkoutUrl,
+          eventTitle: event?.title,
+          selectedSeats,
+          discount: orderResponse.data.discount ?? (couponDiscount + pointsDiscount),
+          selectedTier: orderResponse.data.selectedTier || selectedTier?.name,
+          unitPrice,
+        });
+        return;
+      }
 
+      if (paymentGateway === "razorpay") {
         const loadRazorpayScript = () => {
           return new Promise((resolve) => {
             if (window.Razorpay) return resolve(true);
@@ -249,6 +244,38 @@ function DetailEvent() {
     }
   };
 
+  const handleConfirmSandboxPayment = async () => {
+    if (!sandboxOrder || isBooking) return;
+    setIsBooking(true);
+    try {
+      if (sandboxOrder.gateway === "stripe" && sandboxOrder.checkoutUrl) {
+        window.location.href = sandboxOrder.checkoutUrl;
+        return;
+      }
+
+      toast.info("Verifying demo sandbox payment...");
+      await verifyPayment({
+        razorpay_order_id: sandboxOrder.orderId,
+        razorpay_payment_id: `pay_sim_${Date.now()}`,
+        razorpay_signature: `sig_sim_${Date.now()}`,
+        bookingId: sandboxOrder.bookingId,
+        eventId: id,
+        selectedSeats: sandboxOrder.selectedSeats,
+        discount: sandboxOrder.discount,
+        ticketTier: sandboxOrder.selectedTier,
+        ticketPrice: sandboxOrder.unitPrice,
+      });
+      toast.success("Payment confirmed! Tickets and confirmation email dispatched 🎉");
+      setSandboxOrder(null);
+      setOpen(false);
+      navigate("/profile");
+    } catch (err) {
+      toast.error(err?.message || "Payment verification failed.");
+    } finally {
+      setIsBooking(false);
+    }
+  };
+
   const handleDelete = async () => {
     try {
       await deleteEventbyAdmin(id);
@@ -297,6 +324,23 @@ function DetailEvent() {
     : fillingFast
     ? { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-500", label: `${displayAvailableSeats} left — Filling Fast!`, pulse: true }
     : { bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-500", label: `${displayAvailableSeats} / ${event?.capacity} Seats Left`, pulse: false };
+
+  // ── Dynamic price & discount breakdown ───────────────────────────────────────
+  const unitPrice = selectedTier?.price ?? (event?.Price || 0);
+  const baseTotal = unitPrice * selectedSeats.length;
+
+  let couponDiscount = 0;
+  if (couponCode) {
+    const code = String(couponCode).toUpperCase().trim();
+    if (code === "SPHERE20") couponDiscount = Math.round(baseTotal * 0.20);
+    else if (code === "WELCOME10") couponDiscount = Math.round(baseTotal * 0.10);
+    else if (code === "FESTIVAL50") couponDiscount = Math.round(baseTotal * 0.50);
+  }
+
+  const subtotalAfterCoupon = Math.max(0, baseTotal - couponDiscount);
+  const pointsDiscount = usePoints ? Math.min(user?.walletPoints || 0, subtotalAfterCoupon) : 0;
+  const finalPayable = Math.max(0, subtotalAfterCoupon - pointsDiscount);
+  const totalDiscount = couponDiscount + pointsDiscount;
 
   return (
     <div className="bg-slate-50 min-h-screen p-4 sm:p-8 text-slate-800">
@@ -584,51 +628,107 @@ function DetailEvent() {
                 <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">{user?.walletPoints || 0} pts</span>
               </div>
 
-              {/* Payment Gateway Selector */}
-              <div className="pt-1">
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
-                  Select Payment Method
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPaymentGateway("stripe")}
-                    className={`p-3 rounded-2xl border text-left flex flex-col justify-between transition cursor-pointer ${
-                      paymentGateway === "stripe"
-                        ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20 shadow-xs"
-                        : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <CreditCard className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                      {paymentGateway === "stripe" && <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
-                    </div>
-                    <div className="mt-2">
-                      <div className="text-xs font-bold">Stripe / Global</div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400">Apple Pay, Cards, Google Pay</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPaymentGateway("razorpay")}
-                    className={`p-3 rounded-2xl border text-left flex flex-col justify-between transition cursor-pointer ${
-                      paymentGateway === "razorpay"
-                        ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20 shadow-xs"
-                        : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                      {paymentGateway === "razorpay" && <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
-                    </div>
-                    <div className="mt-2">
-                      <div className="text-xs font-bold">Razorpay / UPI</div>
-                      <div className="text-[10px] text-slate-500 dark:text-slate-400">UPI, PhonePe, GPay, NetBanking</div>
-                    </div>
-                  </button>
+              {/* Price & Ticket Breakdown */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 rounded-2xl space-y-2 text-xs">
+                <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center justify-between pb-1.5 border-b border-slate-200/60 dark:border-slate-700/60">
+                  <span className="flex items-center gap-1.5">
+                    <Ticket className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span>Price Breakdown</span>
+                  </span>
+                  <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    {selectedTier?.name || "Standard Pass"}
+                  </span>
                 </div>
+
+                <div className="flex justify-between text-slate-600 dark:text-slate-300">
+                  <span>
+                    Base Tickets ({selectedSeats.length} &times; ₹{unitPrice})
+                  </span>
+                  <span className="font-semibold">₹{baseTotal}</span>
+                </div>
+
+                {couponDiscount > 0 && (
+                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-semibold">
+                    <span>Coupon ({couponCode.toUpperCase().trim()})</span>
+                    <span>-₹{couponDiscount}</span>
+                  </div>
+                )}
+
+                {pointsDiscount > 0 && (
+                  <div className="flex justify-between text-indigo-600 dark:text-indigo-400 font-semibold">
+                    <span>Wallet Points Applied ({pointsDiscount} pts)</span>
+                    <span>-₹{pointsDiscount}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between font-bold text-slate-900 dark:text-white">
+                  <span>Total Payable</span>
+                  <div className="text-right">
+                    {totalDiscount > 0 && selectedSeats.length > 0 && (
+                      <span className="text-xs text-slate-400 line-through mr-2 font-normal">
+                        ₹{baseTotal}
+                      </span>
+                    )}
+                    <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">
+                      ₹{finalPayable}
+                    </span>
+                  </div>
+                </div>
+
+                {finalPayable === 0 && selectedSeats.length > 0 && (
+                  <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-900/60 rounded-xl text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold text-center">
+                    🎉 100% covered by discounts! No payment gateway needed.
+                  </div>
+                )}
               </div>
+
+              {/* Payment Gateway Selector (Only needed when amount > 0) */}
+              {finalPayable > 0 ? (
+                <div className="pt-1">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">
+                    Select Payment Method
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentGateway("stripe")}
+                      className={`p-3 rounded-2xl border text-left flex flex-col justify-between transition cursor-pointer ${
+                        paymentGateway === "stripe"
+                          ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20 shadow-xs"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <CreditCard className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        {paymentGateway === "stripe" && <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                      </div>
+                      <div className="mt-2">
+                        <div className="text-xs font-bold">Stripe / Global</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">Apple Pay, Cards, Google Pay</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPaymentGateway("razorpay")}
+                      className={`p-3 rounded-2xl border text-left flex flex-col justify-between transition cursor-pointer ${
+                        paymentGateway === "razorpay"
+                          ? "border-indigo-600 bg-indigo-50/80 dark:bg-indigo-950/60 text-indigo-950 dark:text-indigo-100 ring-2 ring-indigo-500/20 shadow-xs"
+                          : "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <Smartphone className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        {paymentGateway === "razorpay" && <CheckCircle2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />}
+                      </div>
+                      <div className="mt-2">
+                        <div className="text-xs font-bold">Razorpay / UPI</div>
+                        <div className="text-[10px] text-slate-500 dark:text-slate-400">UPI, PhonePe, GPay, NetBanking</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             {/* Fixed Sticky Footer */}
@@ -639,9 +739,16 @@ function DetailEvent() {
                     ? `${selectedSeats.length} ticket${selectedSeats.length > 1 ? "s" : ""} selected`
                     : "No seats selected"}
                 </span>
-                <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">
-                  ₹{Math.max(0, (selectedTier?.price || event?.Price) * selectedSeats.length - (usePoints ? Math.min(user?.walletPoints || 0, (selectedTier?.price || event?.Price) * selectedSeats.length) : 0))}
-                </span>
+                <div className="flex items-baseline gap-1.5">
+                  {totalDiscount > 0 && selectedSeats.length > 0 && (
+                    <span className="text-xs text-slate-400 line-through font-semibold">
+                      ₹{baseTotal}
+                    </span>
+                  )}
+                  <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">
+                    ₹{finalPayable}
+                  </span>
+                </div>
               </div>
 
               <div className="flex items-center gap-2.5">
@@ -667,11 +774,70 @@ function DetailEvent() {
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       <span>Processing...</span>
                     </>
+                  ) : finalPayable === 0 ? (
+                    <span>Confirm Free Reservation</span>
                   ) : (
                     <span>Proceed to Pay</span>
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interactive Sandbox Test Gateway Modal */}
+      {sandboxOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 dark:border-slate-800 text-center space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mx-auto">
+              <CreditCard className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                Sandbox Demo Gateway
+              </span>
+              <h3 className="font-extrabold text-base text-slate-900 dark:text-white mt-1.5">
+                {sandboxOrder.gateway === "razorpay" ? "Razorpay / UPI Sandbox" : "Stripe Test Checkout"}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                Payable Amount: <span className="font-black text-indigo-600 dark:text-indigo-400 text-sm">₹{sandboxOrder.amountToPay}</span>
+              </p>
+            </div>
+
+            <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl text-left text-xs space-y-1 text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-800">
+              <div className="flex justify-between">
+                <span>Event:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100 truncate max-w-[160px]">{event?.title}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Seats:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{sandboxOrder.selectedSeats.join(", ")}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Tier:</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{sandboxOrder.selectedTier}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleConfirmSandboxPayment}
+                disabled={isBooking}
+                className="w-full py-2.5 rounded-full text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-200 dark:shadow-none transition cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {isBooking ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                <span>Simulate Successful Payment</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSandboxOrder(null)}
+                disabled={isBooking}
+                className="w-full py-2 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>
