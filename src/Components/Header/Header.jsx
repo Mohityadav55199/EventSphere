@@ -1,4 +1,4 @@
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { LogoutBtn } from "./LogoutBtn";
 import { useSelector } from "react-redux";
 import { Wallet, Menu, X, Search, Sparkles } from "lucide-react";
@@ -15,9 +15,11 @@ export default function Header() {
   const isAuthorised = user?.role === "admin" || user?.role === "organizer";
   const { searchQuery, setSearchQuery, setFilteredEvents } = useSearch();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [events, setEvents] = useState([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -32,28 +34,31 @@ export default function Header() {
   }, []);
 
   const handleSearch = (e) => {
-    const value = e.target.value.toLowerCase();
+    const value = e.target.value;
     setMenuOpen(false);
     setSearchQuery(value);
+    setIsSearchOpen(true);
 
-    if (value.trim() === "") {
+    const q = value.trim().toLowerCase();
+    if (q === "") {
       setFilteredEvents([]);
       return;
     }
 
-    const filtered = events.filter(
-      (event) =>
-        event.title.toLowerCase().includes(value) ||
-        event.description.toLowerCase().includes(value) ||
-        (event.category && event.category.toLowerCase().includes(value)) ||
-        event.location.toLowerCase().includes(value)
-    );
+    const filtered = events.filter((event) => {
+      const title = event.title?.toLowerCase() || "";
+      const desc = event.description?.toLowerCase() || "";
+      const cat = event.category?.toLowerCase() || "";
+      const loc = event.location?.toLowerCase() || "";
+      return title.includes(q) || desc.includes(q) || cat.includes(q) || loc.includes(q);
+    });
     setFilteredEvents(filtered);
   };
 
   useEffect(() => {
     setSearchQuery("");
     setFilteredEvents([]);
+    setIsSearchOpen(false);
   }, [location.pathname, setSearchQuery, setFilteredEvents]);
 
   return (
@@ -76,10 +81,20 @@ export default function Header() {
               placeholder="Search events, categories, locations..."
               className="w-full pl-10 pr-4 py-2 bg-slate-100/90 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/80 focus:bg-white dark:focus:bg-slate-800 text-slate-800 dark:text-slate-100 text-sm rounded-full border border-slate-200/80 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 transition-all outline-none"
               value={searchQuery}
+              onFocus={() => {
+                if (searchQuery.trim()) setIsSearchOpen(true);
+              }}
+              onBlur={() => setTimeout(() => setIsSearchOpen(false), 200)}
               onChange={handleSearch}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchQuery.trim()) {
+                  setIsSearchOpen(false);
+                  navigate(`/events?search=${encodeURIComponent(searchQuery.trim())}`);
+                }
+              }}
             />
           </div>
-          <SearchEvents />
+          <SearchEvents isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
         </div>
 
         {/* Right Section / Auth Controls */}

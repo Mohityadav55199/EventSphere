@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { getAllEvents, getAllEventsByAdmin } from '../services/eventservices/eventapi';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { EventCard } from '../Components/Cards/EventCard';
 import SkeletonCard from '../Components/SkeletonCard';
 import { useSelector } from 'react-redux';
@@ -79,8 +79,21 @@ function Events() {
   const [loading, setLoading] = useState(true);
   const user = useSelector((state) => state.auth.user);
 
-  // Search context integration
+  // Search context integration & local page search isolation
   const { searchQuery, setSearchQuery } = useSearch();
+  const [searchParams] = useSearchParams();
+  const [eventSearch, setEventSearch] = useState("");
+
+  // Populate from URL query or incoming navigation search query once, then decouple
+  useEffect(() => {
+    const urlQuery = searchParams.get("search");
+    if (urlQuery !== null && urlQuery !== undefined) {
+      setEventSearch(urlQuery);
+    } else if (searchQuery) {
+      setEventSearch(searchQuery);
+      if (setSearchQuery) setSearchQuery("");
+    }
+  }, [searchParams]);
 
   // Filter states
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -118,7 +131,7 @@ function Events() {
   // Start from the first page again whenever the result set changes
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [searchQuery, selectedCategory, priceType, maxPrice, dateFilter, customDate, sortBy]);
+  }, [eventSearch, selectedCategory, priceType, maxPrice, dateFilter, customDate, sortBy]);
 
   // Determine highest price bound for slider
   const dynamicMaxPrice = useMemo(() => {
@@ -135,7 +148,7 @@ function Events() {
     setDateFilter("any");
     setCustomDate("");
     setSortBy("upcoming");
-    if (setSearchQuery) setSearchQuery("");
+    setEventSearch("");
   };
 
   // Count active non-default filters
@@ -145,9 +158,9 @@ function Events() {
     if (priceType !== "all") count++;
     if (maxPrice < dynamicMaxPrice) count++;
     if (dateFilter !== "any") count++;
-    if (searchQuery && searchQuery.trim() !== "") count++;
+    if (eventSearch && eventSearch.trim() !== "") count++;
     return count;
-  }, [selectedCategory, priceType, maxPrice, dynamicMaxPrice, dateFilter, searchQuery]);
+  }, [selectedCategory, priceType, maxPrice, dynamicMaxPrice, dateFilter, eventSearch]);
 
   // Main filter and sort computation
   const filteredAndSortedEvents = useMemo(() => {
@@ -160,8 +173,8 @@ function Events() {
       const eventDate = event.date ? new Date(event.date) : null;
 
       // 1. Search Query
-      if (searchQuery && searchQuery.trim() !== "") {
-        const q = searchQuery.toLowerCase().trim();
+      if (eventSearch && eventSearch.trim() !== "") {
+        const q = eventSearch.toLowerCase().trim();
         const titleMatch = event.title?.toLowerCase().includes(q);
         const descMatch = event.description?.toLowerCase().includes(q);
         const locMatch = event.location?.toLowerCase().includes(q);
@@ -216,7 +229,7 @@ function Events() {
       const dateB = b.date ? new Date(b.date).getTime() : Infinity;
       return dateA - dateB;
     });
-  }, [events, searchQuery, selectedCategory, priceType, maxPrice, dateFilter, customDate, sortBy]);
+  }, [events, eventSearch, selectedCategory, priceType, maxPrice, dateFilter, customDate, sortBy]);
 
   // Sidebar filter markup
   const FilterSidebarContent = (
@@ -385,13 +398,13 @@ function Events() {
             <input
               type="text"
               placeholder="Search by title, venue, or keyword..."
-              value={searchQuery || ""}
-              onChange={(e) => setSearchQuery && setSearchQuery(e.target.value)}
+              value={eventSearch}
+              onChange={(e) => setEventSearch(e.target.value)}
               className="w-full pl-10 pr-9 py-2 text-xs sm:text-sm bg-slate-50 rounded-xl border border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
             />
-            {searchQuery && (
+            {eventSearch && (
               <button
-                onClick={() => setSearchQuery && setSearchQuery("")}
+                onClick={() => setEventSearch("")}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-3.5 h-3.5" />
@@ -485,11 +498,11 @@ function Events() {
                 </button>
               </span>
             )}
-            {searchQuery && (
+            {eventSearch && (
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 font-semibold">
-                Search: &quot;{searchQuery}&quot;
-                <button onClick={() => setSearchQuery && setSearchQuery("")} className="hover:text-indigo-900">
-                  <X className="w-3 h-3" />
+                Search: &quot;{eventSearch}&quot;
+                <button onClick={() => setEventSearch("")} className="hover:text-indigo-900">
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </span>
             )}
