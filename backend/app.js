@@ -1,6 +1,8 @@
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import helmet from "helmet";
+import { getRedisClient } from "./utils/redisClient.js";
 import cookieParser from "cookie-parser";
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import userRouter from "./routes/user.routes.js";
@@ -12,6 +14,10 @@ import chatRouter from "./routes/chat.router.js";
 import contactRouter from "./routes/contact.router.js";
 
 const app = express();
+
+// Render sits behind one proxy hop; without this every client shares the proxy's IP,
+// so the rate limiters would count all users together.
+app.set("trust proxy", 1);
 
 // General rate limiter for auth endpoints
 const authLimiter = rateLimit({
@@ -36,6 +42,9 @@ const bookingLimiter = rateLimit({
     skip: (req) => req.method === "GET", // seat availability GETs are not rate-limited
 });
 
+// Security headers. Cross-origin resource policy is relaxed because the Vercel frontend loads assets from this API.
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+
 // Dynamic CORS configuration allowing credentials for Vercel & localhost with 24h preflight cache
 app.use(cors({
     origin: true,
@@ -58,17 +67,42 @@ app.get("/", (req, res) => {
     });
 });
 
-app.get("/health", (req, res) => {
+// Plain /health is instant and never touches the database (safe for frequent keep-alive pings).
+// /health?deep=1 also pings MongoDB and Redis and returns 503 if the database is unreachable,
+// so an external monitor (cron-job.org) can alert on real outages.
+app.get("/health", async (req, res) => {
     const dbStates = ["disconnected", "connected", "connecting", "disconnecting"];
-    const dbStatus = dbStates[mongoose.connection.readyState] || "unknown";
-    res.status(200).json({
+    const body = {
         success: true,
         status: "ok",
-        database: dbStatus,
+        database: dbStates[mongoose.connection.readyState] || "unknown",
         service: "EventSphere API",
         uptime: `${Math.floor(process.uptime())}s`,
         timestamp: new Date().toISOString()
-    });
+    };
+
+    if (req.query.deep) {
+        const started = Date.now();
+        try {
+            await mongoose.connection.db.admin().ping();
+            body.databasePingMs = Date.now() - started;
+        } catch {
+            body.database = "unreachable";
+        }
+        try {
+            const redis = await getRedisClient();
+            await redis.get("health:ping");
+            body.redis = redis.kind || "ok";
+        } catch {
+            body.redis = "error";
+        }
+        if (body.database !== "connected") {
+            body.success = false;
+            body.status = "degraded";
+            return res.status(503).json(body);
+        }
+    }
+    res.status(200).json(body);
 });
 
 app.use('/api/v1/users', authLimiter, userRouter);

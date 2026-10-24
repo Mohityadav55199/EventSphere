@@ -11,14 +11,16 @@ import {
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/role.middleware.js";
 import qrScanMiddleware from "../middlewares/qrScan.middleware.js";
+import validate from "../middlewares/validate.middleware.js";
+import { eventIdParam } from "../validators/schemas.js";
 
 const bookingRouter = Router();
 
 // ── Public: live seat availability (no auth needed for seat count display) ────
-bookingRouter.get("/seat-availability/:eventId", getSeatAvailability);
+bookingRouter.get("/seat-availability/:eventId", validate(eventIdParam, "params"), getSeatAvailability);
 
 // ── Booking flow ──────────────────────────────────────────────────────────────
-bookingRouter.post("/create-order/:eventId", authMiddleware, createOrder);
+bookingRouter.post("/create-order/:eventId", authMiddleware, validate(eventIdParam, "params"), createOrder);
 bookingRouter.post("/verify-payment", authMiddleware, verifyPayment);
 
 // ── User routes ───────────────────────────────────────────────────────────────

@@ -18,6 +18,8 @@ import {
   Filter
 } from 'lucide-react';
 
+const PAGE_SIZE = 9;
+
 const CATEGORIES = [
   "All",
   "Music",
@@ -88,6 +90,7 @@ function Events() {
   const [customDate, setCustomDate] = useState("");
   const [sortBy, setSortBy] = useState("upcoming"); // 'upcoming' | 'priceAsc' | 'priceDesc' | 'rating'
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -111,6 +114,11 @@ function Events() {
     };
     fetchEvents();
   }, [user]);
+
+  // Start from the first page again whenever the result set changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchQuery, selectedCategory, priceType, maxPrice, dateFilter, customDate, sortBy]);
 
   // Determine highest price bound for slider
   const dynamicMaxPrice = useMemo(() => {
@@ -516,9 +524,10 @@ function Events() {
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
               ) : filteredAndSortedEvents.length > 0 ? (
-                filteredAndSortedEvents.map((event) => (
+                filteredAndSortedEvents.slice(0, visibleCount).map((event) => (
                   <Link key={event._id} to={`/event/${event._id}`}>
                     <EventCard
+                      id={event._id}
                       organizer={event.organizer?.name || "EventSphere"}
                       image={event.image}
                       title={event.title}
@@ -549,6 +558,18 @@ function Events() {
                 </div>
               )}
             </div>
+
+            {/* Load more: renders events in pages of PAGE_SIZE so long lists stay fast */}
+            {!loading && filteredAndSortedEvents.length > visibleCount && (
+              <div className="pt-2 text-center">
+                <button
+                  onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                  className="px-6 py-2.5 rounded-xl bg-white border border-slate-200 text-sm font-bold text-indigo-600 hover:bg-indigo-50 transition shadow-xs"
+                >
+                  Load more ({filteredAndSortedEvents.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
           </main>
         </div>
 

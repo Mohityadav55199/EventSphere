@@ -6,7 +6,7 @@ import { setCredentials } from "../../store/authslice";
 import { Link, useNavigate } from "react-router-dom";
 import { ToastContainer, toast } from "react-toastify";
 import { Mail, Lock, Eye, EyeOff, Sparkles, ArrowRight, ShieldCheck, Loader2, CloudLightning } from "lucide-react";
-import { baseURL } from "../../config/baseURL.js";
+import useServerStatus from "../../hooks/useServerStatus";
 
 function Login() {
   const [showPassword, setShowPassword] = useState(false);
@@ -20,10 +20,8 @@ function Login() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  React.useEffect(() => {
-    // Proactively wake up backend server on Render free tier
-    fetch(`${baseURL}/health`).catch(() => {});
-  }, []);
+  // Also wakes the Render free-tier server, and tells the user if the database is down
+  const serverStatus = useServerStatus();
 
   React.useEffect(() => {
     let timer;
@@ -56,7 +54,13 @@ function Login() {
       }, 500);
     } catch (error) {
       console.error("Login Error:", error);
-      toast.error(error.response?.data?.message || error.message || "Invalid email or password!");
+      // authapi rethrows the server's JSON body, or the raw axios error when there was no response
+      const noResponse = error?.code === "ECONNABORTED" || error?.message === "Network Error";
+      toast.error(
+        noResponse
+          ? "Service temporarily unavailable. The server may still be starting, please try again in a moment."
+          : error?.message || "Invalid email or password!"
+      );
     }
   };
 
@@ -79,16 +83,31 @@ function Login() {
           </p>
         </div>
 
+        {serverStatus === "db-down" && (
+          <div role="alert" className="mb-5 p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
+            <CloudLightning className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>Service temporarily unavailable: the database is reconnecting. Login will work again shortly.</span>
+          </div>
+        )}
+        {serverStatus === "unreachable" && (
+          <div role="status" className="mb-5 p-3 rounded-xl bg-amber-950/50 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+            <span>Waking up the server. This can take up to a minute on the free tier.</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
           {/* Email */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+            <label htmlFor="login-email" className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
               Email Address
             </label>
             <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
+                id="login-email"
                 type="email"
+                aria-invalid={errors.email ? "true" : "false"}
                 {...register("email", {
                   required: "Email is required",
                   pattern: {
@@ -104,21 +123,26 @@ function Login() {
               />
             </div>
             {errors.email && (
-              <p className="text-rose-400 text-xs mt-1.5 font-medium">{errors.email.message}</p>
+              <p role="alert" className="text-rose-400 text-xs mt-1.5 font-medium">{errors.email.message}</p>
             )}
           </div>
 
           {/* Password */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+              <label htmlFor="login-password" className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
                 Password
               </label>
+              <Link to="/forgot-password" className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline">
+                Forgot password?
+              </Link>
             </div>
             <div className="relative">
               <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
+                id="login-password"
                 type={showPassword ? "text" : "password"}
+                aria-invalid={errors.password ? "true" : "false"}
                 {...register("password", { required: "Password is required" })}
                 className={`w-full pl-10 pr-11 py-2.5 bg-slate-800/70 border ${
                   errors.password ? "border-rose-500/80 focus:ring-rose-500/20" : "border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20"
@@ -136,7 +160,7 @@ function Login() {
               </button>
             </div>
             {errors.password && (
-              <p className="text-rose-400 text-xs mt-1.5 font-medium">{errors.password.message}</p>
+              <p role="alert" className="text-rose-400 text-xs mt-1.5 font-medium">{errors.password.message}</p>
             )}
           </div>
 
@@ -161,7 +185,7 @@ function Login() {
 
           {/* Waking Server Feedback */}
           {isWakingServer && (
-            <div className="p-3 rounded-xl bg-indigo-950/70 border border-indigo-500/30 text-indigo-200 text-xs flex items-center justify-center gap-2 animate-pulse">
+            <div role="status" className="p-3 rounded-xl bg-indigo-950/70 border border-indigo-500/30 text-indigo-200 text-xs flex items-center justify-center gap-2 animate-pulse">
               <CloudLightning className="w-4 h-4 text-amber-400 shrink-0" />
               <span>Connecting to cloud server... (Render free tier spin-up in progress)</span>
             </div>

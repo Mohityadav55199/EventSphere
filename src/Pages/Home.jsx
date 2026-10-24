@@ -57,6 +57,7 @@ function Home() {
               .map((event) => (
                 <Link key={event._id} to={`/event/${event._id}`}>
                   <EventCard
+                    id={event._id}
                     organizer={event.organizer?.name || "EventSphere"}
                     image={event.image}
                     title={event.title}
@@ -106,6 +107,7 @@ function Home() {
               .map((event) => (
                 <Link key={event._id} to={`/event/${event._id}`}>
                   <EventCard
+                    id={event._id}
                     organizer={event.organizer?.name || "EventSphere"}
                     image={event.image}
                     title={event.title}

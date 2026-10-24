@@ -109,6 +109,7 @@ async function getRedisClient() {
       const { Redis } = await import("@upstash/redis");
       const upstash = new Redis({ url: upstashUrl, token: upstashToken });
       _client = makeUpstashAdapter(upstash);
+      _client.kind = "upstash";
       console.log("✅ Redis: connected via Upstash REST API");
       return _client;
     } catch (err) {
@@ -127,6 +128,7 @@ async function getRedisClient() {
         setTimeout(reject, 5000); // 5s connection timeout
       });
       _client = makeIoRedisAdapter(ioredis);
+      _client.kind = "redis";
       console.log("✅ Redis: connected via standard protocol (ioredis)");
       return _client;
     } catch (err) {
@@ -140,6 +142,7 @@ async function getRedisClient() {
     "   Set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN for production."
   );
   _client = inMemoryClient;
+  _client.kind = "in-memory";
   return _client;
 }
 

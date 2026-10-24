@@ -4,12 +4,15 @@ dotenv.config({
 });
 
 import connectDB from "./config/db.js";
+import { validateEnv } from "./config/env.js";
 import app from "./app.js";
 import { initSocket } from "./socket.js";
 import http from "http";
 import { autoSeedEventsIfEmpty } from "./utils/autoSeed.js";
 import { startHoldExpiryJob } from "./jobs/holdExpiry.js";
 import { autoMigrateAvailableSeats } from "./utils/autoMigrateAvailableSeats.js";
+
+validateEnv();
 
 const port = process.env.PORT || 5000;
 const server = http.createServer(app);

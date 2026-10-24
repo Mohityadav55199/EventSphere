@@ -1,14 +1,19 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { deleteEventbyAdmin, getEventById } from "../services/eventservices/eventapi";
-import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2, Zap, Users, CreditCard, Smartphone } from "lucide-react";
+import { Calendar, Clock, MapIcon, User2Icon, Ticket, Tag, Sparkles, CheckCircle2, Zap, Users, CreditCard, Smartphone, Heart, CalendarPlus } from "lucide-react";
 import { createOrder, verifyPayment } from "../services/bookingservices/bookingapi";
 import { useSelector } from "react-redux";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import ReviewCard from "../Components/Cards/ReviewCard";
 import ReviewForm from "../Components/Cards/PostReview";
-import ChatBox from "../Components/Chatbox/Chatbox";
+import useDocumentTitle from "../hooks/useDocumentTitle";
+import useWishlist from "../hooks/useWishlist";
+import { googleCalendarUrl } from "../lib/calendar";
+import { optimizeImage } from "../lib/image";
+
+const ChatBox = lazy(() => import("../Components/Chatbox/Chatbox"));
 import useLiveSeatCount from "../hooks/useLiveSeatCount";
 import SeatMap from "../Components/SeatMap";
 
@@ -27,6 +32,18 @@ function DetailEvent() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const [isBooking, setIsBooking] = useState(false);
+  useDocumentTitle(event?.title);
+
+  const { isSaved, toggle: toggleWishlist } = useWishlist();
+  const isEventSaved = id ? isSaved(id) : false;
+  const calendarLink = event?.date
+    ? googleCalendarUrl({
+        title: event?.title,
+        date: event?.date,
+        location: event?.location,
+        description: event?.description,
+      })
+    : null;
 
   // ── Live seat count via Socket.io (BookMyShow-style real-time updates) ───────
   const {
@@ -205,7 +222,28 @@ function DetailEvent() {
   };
 
   if (loading) {
-    return <div className="flex justify-center items-center h-screen bg-slate-50 text-slate-600 font-medium">Loading event details...</div>;
+    return (
+      <div className="bg-slate-50 min-h-screen p-4 sm:p-8" role="status" aria-label="Loading event details">
+        <div className="max-w-5xl mx-auto p-6 sm:p-8 bg-white rounded-3xl border border-slate-200 space-y-6 animate-pulse">
+          <div className="w-full h-72 sm:h-96 rounded-2xl bg-slate-200" />
+          <div className="h-8 w-2/3 rounded-lg bg-slate-200" />
+          <div className="flex flex-wrap gap-3">
+            <div className="h-8 w-40 rounded-full bg-slate-200" />
+            <div className="h-8 w-28 rounded-full bg-slate-200" />
+            <div className="h-8 w-48 rounded-full bg-slate-200" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="h-24 rounded-2xl bg-slate-200" />
+            <div className="h-24 rounded-2xl bg-slate-200" />
+            <div className="h-24 rounded-2xl bg-slate-200" />
+          </div>
+          <div className="space-y-2">
+            <div className="h-4 w-full rounded bg-slate-200" />
+            <div className="h-4 w-5/6 rounded bg-slate-200" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (error) {
@@ -234,7 +272,7 @@ function DetailEvent() {
           {/* Banner Image */}
           <div className="w-full h-72 sm:h-96 rounded-2xl overflow-hidden bg-slate-100 relative">
             <img
-              src={event?.image || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80"}
+              src={optimizeImage(event?.image, 1200) || "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80"}
               alt={event?.title}
               className="w-full h-full object-cover"
             />
@@ -248,13 +286,42 @@ function DetailEvent() {
             </div>
           </div>
 
-          {/* Title */}
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            {event?.title}
-          </h1>
+          {/* Title & Top Actions */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              {event?.title}
+            </h1>
+            <div className="flex items-center gap-2 shrink-0">
+              {calendarLink && (
+                <a
+                  href={calendarLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-full transition shadow-xs"
+                  title="Add to Google Calendar"
+                >
+                  <CalendarPlus className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Add to Calendar</span>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => toggleWishlist(id)}
+                aria-pressed={isEventSaved}
+                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition border cursor-pointer ${
+                  isEventSaved
+                    ? "bg-rose-50 border-rose-200 text-rose-600 shadow-xs"
+                    : "bg-slate-100 hover:bg-slate-200 border-transparent text-slate-700"
+                }`}
+              >
+                <Heart className={`w-3.5 h-3.5 ${isEventSaved ? "fill-rose-500 text-rose-500" : "text-slate-500"}`} />
+                <span>{isEventSaved ? "Saved" : "Save Event"}</span>
+              </button>
+            </div>
+          </div>
 
           {/* Key Info Pills */}
-          <div className="flex flex-wrap gap-4 text-xs font-medium text-slate-600">
+          <div className="flex flex-wrap gap-3 sm:gap-4 text-xs font-medium text-slate-600">
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 rounded-full">
               <Calendar className="w-4 h-4 text-indigo-600" />
               <span>{new Date(event?.date).toLocaleDateString("en-IN", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</span>
@@ -277,7 +344,7 @@ function DetailEvent() {
             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all duration-500 ${seatBadge.bg} ${seatBadge.text}`}>
               <Users className="w-4 h-4" />
               <span className="flex items-center gap-1">
-                <span className={`w-1.5 h-1.5 rounded-full ${seatBadge.dot} ${seatBadge.pulse ? "animate-pulse" : ""} inline-block`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${seatBadge.dot} ${seatBadge.pulse ? "animate-pulse" : ""}`} />
                 {seatLoading ? "Checking seats..." : seatBadge.label}
               </span>
             </div>
@@ -286,7 +353,7 @@ function DetailEvent() {
           {/* Held seats notice — shows when others are currently in checkout */}
           {!seatLoading && heldSeats.length > 0 && !isSoldOut && (
             <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800">
-              <Zap className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+              <Zap className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               <span>
                 <strong>{heldSeats.length} seat{heldSeats.length > 1 ? "s" : ""}</strong> currently in checkout by other users — grab yours before they sell out!
               </span>
@@ -295,7 +362,7 @@ function DetailEvent() {
 
           {/* Tiered Ticket Selection Cards */}
           <div className="space-y-3 pt-2 border-t border-slate-100">
-            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider text-xs">Select Ticket Tier / Pass</h3>
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Select Ticket Tier / Pass</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {availableTiers.map((tier) => (
                 <div
@@ -427,7 +494,7 @@ function DetailEvent() {
 
             {/* Promo Code Input */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
+              <label className="text-xs font-bold text-slate-700 mb-1 flex items-center gap-1">
                 <Tag className="w-3.5 h-3.5 text-indigo-600" />
                 Promo / Coupon Code
               </label>
@@ -533,7 +600,9 @@ function DetailEvent() {
 
       {/* Floating Chat Box */}
       <div className="fixed bottom-4 right-4 z-50">
-        <ChatBox eventId={id} />
+        <Suspense fallback={null}>
+          <ChatBox eventId={id} />
+        </Suspense>
       </div>
     </div>
   );

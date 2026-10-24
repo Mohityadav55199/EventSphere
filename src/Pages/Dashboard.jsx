@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { lazy, Suspense, useEffect, useState } from "react";
 import { getEventAnalytics, updateEvent, getMyEvents, cancelEvent } from "../services/eventservices/eventapi";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -6,7 +6,7 @@ import { Calendar, Trash2, Edit, Users, Ticket, IndianRupee, TrendingUp, Award, 
 import { IconChartBar } from "@tabler/icons-react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import UpdateEventModal from "../Components/UpdateEventForm";
-import QRScannerModal from "../Components/QRScannerModal";
+const QRScannerModal = lazy(() => import("../Components/QRScannerModal"));
 
 function Dashboard() {
   const [events, setEvents] = useState([]);
@@ -243,10 +243,14 @@ function Dashboard() {
           />
         )}
 
-        <QRScannerModal 
-          isOpen={isScannerOpen} 
-          onClose={() => setIsScannerOpen(false)} 
-        />
+        {isScannerOpen && (
+          <Suspense fallback={null}>
+            <QRScannerModal
+              isOpen={isScannerOpen}
+              onClose={() => setIsScannerOpen(false)}
+            />
+          </Suspense>
+        )}
 
       </div>
     </div>

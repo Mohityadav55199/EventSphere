@@ -9,7 +9,25 @@ export const loginUser = async ({email, password}) => {
   }
 }
 
-export const registerUser = async ({name, email, password, role}) => {
+export const forgotPassword = async ({ email }) => {
+  try {
+    const response = await API.post("/api/v1/users/forgot-password", { email });
+    return response.data;
+  } catch (error) {
+    throw error.response ? error.response.data : error;
+  }
+}
+
+export const resetPasswordWithToken = async ({ token, password }) => {
+  try {
+    const response = await API.post(`/api/v1/users/reset-password/${token}`, { password });
+    return response.data;
+  } catch (error) {
+    throw error.response ? error.response.data : error;
+  }
+}
+
+export const registerUser =async ({name, email, password, role}) => {
   try {
     const response = await API.post("/api/v1/users/register", { 
       name,

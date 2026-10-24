@@ -19,11 +19,15 @@ const Contact = lazy(() => import('./Pages/Contact'));
 const Dashboard = lazy(() => import('./Pages/Dashboard'));
 const AddEvent = lazy(() => import('./Pages/AddEvent'));
 const DetailEvent = lazy(() => import('./Pages/DetailEvent'));
+const ForgotPassword = lazy(() => import('./Pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./Pages/ResetPassword'));
 import PageLoader from './Components/PageLoader';
+import { RouteErrorFallback } from './Components/ErrorBoundary';
+const NotFound = lazy(() => import('./Pages/NotFound'));
 
 const router = createBrowserRouter(
   createRoutesFromElements(
-    <Route path='/' element={<App />}>
+    <Route path='/' element={<App />} errorElement={<RouteErrorFallback />}>
       <Route path='/' element={<Suspense fallback={<PageLoader />}><Home /></Suspense>} />
       <Route path='/login' element={
         <Protected authenication={false}>
@@ -35,6 +39,12 @@ const router = createBrowserRouter(
           <Suspense fallback={<PageLoader />}><Signup /></Suspense>
         </Protected>
       } />
+      <Route path='/forgot-password' element={
+        <Protected authenication={false}>
+          <Suspense fallback={<PageLoader />}><ForgotPassword /></Suspense>
+        </Protected>
+      } />
+      <Route path='/reset-password/:token' element={<Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>} />
       <Route path='/profile' element={<Suspense fallback={<PageLoader />}><Profile /></Suspense>} />
       <Route path='/events' element={<Suspense fallback={<PageLoader />}><Events /></Suspense>} />
       <Route path='/about' element={<Suspense fallback={<PageLoader />}><About /></Suspense>} />
@@ -51,6 +61,7 @@ const router = createBrowserRouter(
           <Suspense fallback={<PageLoader />}><AddEvent /></Suspense>
         </Protected>
       } />
+      <Route path='*' element={<Suspense fallback={<PageLoader />}><NotFound /></Suspense>} />
     </Route>
   )
 );

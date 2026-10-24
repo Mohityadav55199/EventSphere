@@ -1,63 +1,85 @@
+# EventSphere Backend ⚙️
+
+The core REST API & WebSocket engine for **EventSphere** — an enterprise-grade event discovery and booking platform featuring real-time seat holds (BookMyShow concurrency architecture), dual payment gateways (Stripe & Razorpay), HMAC-signed QR ticketing, live community chat, and automated hold-expiry reconciliation.
 
 ---
 
-# ⚙️ Backend (Node.js + Express + MongoDB)
+## 🛠️ Architecture & Tech Stack
 
-### **About Section (GitHub)**  
-> EventEase Backend is the core API service for the EventEase platform. It manages user authentication, event creation, booking, and payment handling. It integrates Razorpay for secure payments, Cloudinary for image storage, and implements a wallet points system for cashback. Built with Node.js, Express, and MongoDB, it provides scalable and secure REST APIs.
+- **Runtime**: Node.js 20.x, Express.js 5.x
+- **Database**: MongoDB Atlas + Mongoose 8.x
+- **Real-Time & Concurrency**: Socket.io 4.x, Upstash Redis / Redis (`ioredis`), Node-cron (seat hold reconciliation)
+- **Security & Auth**: JWT (Access + Refresh tokens with rotation), bcryptjs, Helmet, Express Rate Limit, HMAC SHA-256 (tickets)
+- **Payments**: Stripe SDK & Razorpay SDK (with failure-isolated refund automation)
+- **Media & Storage**: Cloudinary, Multer (memory buffer streaming)
+- **Validation**: Zod 4.x schemas with strict type coercion
 
-### **README.md**
-```markdown
-# EventEase Backend ⚙️
+---
 
-The backend of **EventEase**, a complete event booking system with user authentication, payment processing, wallet cashback, and event management.
+## 🔐 Environment Variables Reference
 
- 🚀 Features
-- 👤 User authentication (JWT-based)
-- 🗂️ Role-based access control (admin, organizer, user)
-- 📝 Event creation & management
-- 💳 Razorpay integration for payments
-- 💰 Wallet points system with discounts & rewards
-- 🖼️ Cloudinary integration for image uploads
-- 📧 Secure APIs for bookings & event data
-- 🛡️ Middleware-based auth & validation
-- 💬 Real-time Socket.io based Chat for event communities
+A startup check (`backend/config/env.js`) validates environment variables upon boot and exits immediately with an actionable error if any mandatory secret is missing.
 
-## 🛠️ Tech Stack
-- Node.js
-- Express.js
-- MongoDB + Mongoose
-- Razorpay SDK
-- Cloudinary SDK
-- Multer (file handling)
-- Socket.io
+### 🔴 Mandatory Variables (App will exit if missing)
 
-## 📦 Installation
+| Variable | Description | Example |
+| :--- | :--- | :--- |
+| `MONGODB_URI` / `MONGO_URI` | MongoDB Atlas or local connection string | `mongodb+srv://user:pass@cluster.mongodb.net/eventsphere` |
+| `ACCESS_TOKEN_SECRET` | Cryptographic secret for short-lived access JWTs | `random_hex_or_passphrase_64_chars` |
+| `REFRESH_TOKEN_SECRET` | Cryptographic secret for long-lived refresh JWTs | `random_hex_or_passphrase_64_chars` |
+
+### 🟡 Feature Variables (Recommended for full production capabilities)
+
+| Variable | Target Feature | If Omitted |
+| :--- | :--- | :--- |
+| `CLIENT_URL` | CORS, payment redirects, and password reset links | Defaults to permissive CORS; defaults to localhost |
+| `STRIPE_SECRET_KEY` | Global card payments, Apple Pay, Google Pay | Stripe checkout disabled |
+| `RAZORPAY_KEY_ID` & `RAZORPAY_KEY_SECRET` | UPI, NetBanking, Indian card payments | Razorpay checkout disabled |
+| `UPSTASH_REDIS_REST_URL` & `UPSTASH_REDIS_REST_TOKEN` | Shared Redis seat holds (BookMyShow architecture) | Falls back gracefully to in-memory TTL hold store |
+| `QR_SECRET` | HMAC signature for offline ticket verification | QR generation will use unkeyed default hash |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Event banner and photo uploads | Image uploads fail with 500 error |
+| `EMAIL_USER` & `SMTP_HOST` | Automated ticket PDF email and password reset | Console logs notification instead of sending |
+
+---
+
+## 🚀 Running Locally
+
 ```bash
-# Clone repo
-git clone <your-backend-repo-url>
+# 1. Navigate to backend directory
 cd backend
 
-# Install dependencies
+# 2. Install dependencies
 npm install
 
-3. Environment Variables
+# 3. Create .env file from template
+cp .env.example .env
+# (Edit .env and populate your MongoDB URI and secrets)
 
-Create a .env file in the root directory and configure:
+# 4. Run automated test suite
+npm test
 
-PORT=5000
-MONGO_URI=your_mongodb_connection_string
-JWT_SECRET=your_jwt_secret
-CLOUDINARY_CLOUD_NAME=your_cloudinary_name
-CLOUDINARY_API_KEY=your_cloudinary_key
-CLOUDINARY_API_SECRET=your_cloudinary_secret
-RAZORPAY_KEY_ID=your_razorpay_key
-RAZORPAY_KEY_SECRET=your_razorpay_secret
-CLIENT_URL= your_client_url
-ACCESS_TOKEN_SECRET= your_token_secret
-ACCESS_TOKEN_EXPIRY= in days(d)
-REFRESH_TOKEN_SECRET=your_token_secret
-REFRESH_TOKEN_EXPIRY= in days(d)
-
-# Run dev server
+# 5. Start development server
 npm run dev
+```
+
+---
+
+## 🧪 Automated Testing
+
+EventSphere includes unit tests covering critical security and business logic:
+- **Authentication & Tokens**: Valid token verification, expired token rejection (clean 401 for client refresh), tampered token defense.
+- **Event Cancellation & Refunds**: Failure-isolated batch processing — one failing payment gateway refund never halts cancellation of remaining bookings; detailed failure summary is recorded.
+- **Validation**: Zod schema boundary validation, role-escalation defense (attendees cannot register as admin), multipart string-to-number coercion.
+- **Booking & Concurrency**: QR HMAC generation and verification, expired seat hold filtering, tiered pass calculation.
+
+Run tests:
+```bash
+npm test
+```
+
+---
+
+## 🛡️ Production Health & Diagnostics
+
+- `GET /health`: Instant lightweight keep-alive ping for cloud infrastructure (safe for Render 15-minute sleep prevention).
+- `GET /health?deep=1`: Deep diagnostic probe pinging MongoDB admin database and Redis. Returns HTTP 200 with latency if all healthy, or HTTP 503 Service Unavailable if the database is unreachable.

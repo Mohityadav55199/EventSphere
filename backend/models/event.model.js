@@ -110,6 +110,11 @@ eventSchema.pre("save", function (next) {
 
 // Index for fast atomic seat queries
 eventSchema.index({ availableSeats: 1 });
+// Public list query (active events by date) and the organizer dashboard
+eventSchema.index({ activeStatus: 1, date: 1 });
+eventSchema.index({ organizer: 1 });
+// Server-side search over title, description and location
+eventSchema.index({ title: "text", description: "text", location: "text" }, { weights: { title: 5, location: 2, description: 1 } });
 
 const Event = mongoose.model("Event", eventSchema);
 export default Event;

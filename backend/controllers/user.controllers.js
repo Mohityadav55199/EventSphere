@@ -3,6 +3,8 @@ import User from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import jwt from "jsonwebtoken";
 import { ApiResponse } from "../utils/ApiResponse.js";
+import { sendPasswordResetEmail } from "../utils/emailService.js";
+import crypto from "crypto";
 
 const genearteAccessTokenAndRefreshToken = async (userOrId) => {
     try {
@@ -70,12 +72,10 @@ const loginUser = asyncHandler(async(req, res) => {
     }
     const cleanEmail = email.toLowerCase().trim();
     const user = await User.findOne({ email: cleanEmail });
-    if(!user){
-        throw new ApiError(401, "User not found with this email");
-    }
-    const isPasswordCorrect = await user.isPasswordCorrect(password);
-    if(!isPasswordCorrect){
-        throw new ApiError(401, "Incorrect password");
+    // Same message for unknown email and wrong password so emails can't be enumerated
+    if(!user || !(await user.isPasswordCorrect(password))){
+        console.warn(`[auth] failed login for ${cleanEmail} from ${req.ip}`);
+        throw new ApiError(401, "Invalid email or password");
     }
 
     const { accessToken, refreshToken } = await genearteAccessTokenAndRefreshToken(user);
@@ -131,41 +131,80 @@ const logoutUser = asyncHandler(async(req, res) => {
 })
 
 const refreshAccessToken = asyncHandler(async(req,res)=>{
-    const instantRefreshToken = req.cookies.refreshToken || req.body.refreshToken
-    if(!instantRefreshToken){
-        throw new ApiError(403,"Unauthorized Request")
-    } 
-    try {
-        const decodedToken = jwt.verify(instantRefreshToken,process.env.REFRESH_TOKEN_SECRET)
-        const user = await User.findById(decodedToken?._id)
-       // console.log(user)
-        if(!user){
-            throw new ApiError(400,"Invalid Refresh Token")
-        }
-        
-        if(instantRefreshToken !== user?.refreshToken){
-            throw new ApiError(403,"Refresh Token invalid or expired ")
-        }
-        const options = {
-            httpOnly : true,
-            secure : true,
-        }
-        const{accessToken , refreshToken: newRefreshToken} = await genearteAccessTokenAndRefreshToken(user._id)
-        return res
-        .status(200)
-        .cookie("accessToken",accessToken,options)
-        .cookie("refreshToken",newRefreshToken,options)
-        .json(
-            new ApiResponse(
-                200,
-                {accessToken,refreshToken:newRefreshToken},
-                "Access Token Refreshed"
-            )
-        )
-    } catch (error) {
-        throw new ApiError(405,error?.message || "Invalid Refresh Token")
+    const incomingRefreshToken = req.cookies?.refreshToken || req.body?.refreshToken
+    if(!incomingRefreshToken){
+        throw new ApiError(401,"Refresh token is required")
     }
+
+    let decodedToken;
+    try {
+        decodedToken = jwt.verify(incomingRefreshToken, process.env.REFRESH_TOKEN_SECRET)
+    } catch {
+        throw new ApiError(401,"Refresh token is invalid or expired")
+    }
+
+    const user = await User.findById(decodedToken?._id)
+    // The stored token must match: logging in elsewhere or logging out revokes older refresh tokens
+    if(!user || incomingRefreshToken !== user.refreshToken){
+        throw new ApiError(401,"Refresh token is invalid or has been revoked")
+    }
+
+    // Must match the login cookie options or the browser treats them as cross-site and drops them
+    const options = {
+        httpOnly : true,
+        secure : true,
+        sameSite: "none",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    }
+    const { accessToken, refreshToken: newRefreshToken } = await genearteAccessTokenAndRefreshToken(user)
+    return res
+    .status(200)
+    .cookie("accessToken",accessToken,options)
+    .cookie("refreshToken",newRefreshToken,options)
+    .json(
+        new ApiResponse(
+            200,
+            {accessToken,refreshToken:newRefreshToken},
+            "Access Token Refreshed"
+        )
+    )
 })
+
+const hashResetToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
+
+// Always answers the same way so the endpoint can't be used to discover registered emails
+const forgotPassword = asyncHandler(async (req, res) => {
+    const user = await User.findOne({ email: req.body.email });
+    if (user) {
+        const token = crypto.randomBytes(32).toString("hex");
+        await User.updateOne(
+            { _id: user._id },
+            { $set: { passwordResetToken: hashResetToken(token), passwordResetExpires: new Date(Date.now() + 15 * 60 * 1000) } }
+        );
+        const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(/\/$/, "");
+        // Not awaited: email delivery shouldn't slow the response or reveal whether the account exists
+        sendPasswordResetEmail({ user, resetUrl: `${clientUrl}/reset-password/${token}` });
+    }
+    return res.status(200).json(
+        new ApiResponse(200, {}, "If an account exists for that email, a reset link has been sent")
+    );
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+    const user = await User.findOne({
+        passwordResetToken: hashResetToken(req.params.token),
+        passwordResetExpires: { $gt: new Date() },
+    }).select("+passwordResetToken +passwordResetExpires");
+    if (!user) {
+        throw new ApiError(400, "Reset link is invalid or has expired");
+    }
+    user.password = req.body.password; // hashed by the pre-save hook
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.refreshToken = undefined; // sign out existing sessions
+    await user.save({ validateBeforeSave: false });
+    return res.status(200).json(new ApiResponse(200, {}, "Password reset successful. Please log in."));
+});
 
 const changePassword = asyncHandler(async(req,res)=>{
  try {
@@ -238,6 +277,8 @@ export {
     logoutUser,
     refreshAccessToken,
     changePassword,
+    forgotPassword,
+    resetPassword,
     getCurrentUser,
     updateAccountDetails
 };

@@ -80,6 +80,13 @@ const bookingSchema = new Schema({
     qrCode: {
         type: String 
     },
+    // Outcome of the refund issued when an organizer cancels the event
+    refundStatus: {
+        type: String,
+        enum: ["none", "refunded", "failed"],
+        default: "none",
+    },
+    refundError: { type: String },
     //track if user has checked in at the event
     checkedIn: {
         type: Boolean,
@@ -88,6 +95,11 @@ const bookingSchema = new Schema({
 
 
 }, { timestamps: true });
+
+// "My Bookings" (user + newest first), the hold-expiry job (status + expiry), per-event lookups
+bookingSchema.index({ user: 1, createdAt: -1 });
+bookingSchema.index({ status: 1, holdExpiresAt: 1 });
+bookingSchema.index({ event: 1, status: 1 });
 
 const Booking = mongoose.model("Booking", bookingSchema);
 export default Booking;

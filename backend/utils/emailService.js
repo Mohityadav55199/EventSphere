@@ -56,6 +56,35 @@ async function getTransporter() {
 }
 
 /**
+ * Send Password Reset Email (link valid for 15 minutes)
+ */
+export async function sendPasswordResetEmail({ user, resetUrl }) {
+  try {
+    const mailer = await getTransporter();
+    if (!mailer) {
+      console.warn("⚠️ Email transporter not configured, skipping password reset email.");
+      return;
+    }
+    const name = (user.name || "there").replace(/[<>&"]/g, "");
+    await mailer.sendMail({
+      from: `"EventSphere" <${process.env.EMAIL_FROM || "no-reply@eventsphere.com"}>`,
+      to: user.email,
+      subject: "Reset your EventSphere password",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1e293b;">
+          <h2 style="color: #4f46e5;">Reset your password</h2>
+          <p>Hi ${name},</p>
+          <p>We received a request to reset your EventSphere password. This link is valid for 15 minutes.</p>
+          <p><a href="${resetUrl}" style="display:inline-block;padding:12px 20px;background:#4f46e5;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">Reset Password</a></p>
+          <p style="font-size:12px;color:#64748b;">If you didn't request this, you can safely ignore this email.</p>
+        </div>`,
+    });
+  } catch (err) {
+    console.error("❌ Failed to send password reset email:", err.message);
+  }
+}
+
+/**
  * Send Booking Confirmation Email with QR Code
  */
 export async function sendTicketConfirmationEmail({ user, event, booking }) {

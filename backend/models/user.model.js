@@ -30,6 +30,10 @@ const userSchema = new Schema({
         type: String
     },
 
+    // SHA-256 hash of the emailed reset token (the raw token is never stored)
+    passwordResetToken: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
+
     walletPoints: {
         type: Number,
         default: 0,

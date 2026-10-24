@@ -17,6 +17,7 @@
  */
 
 import cron from "node-cron";
+import mongoose from "mongoose";
 import Booking from "../models/booking.model.js";
 import Event from "../models/event.model.js";
 import { atomicRestoreSeats } from "../utils/bookingLock.js";
@@ -48,6 +49,8 @@ let isRunning = false; // Prevent overlapping runs
 
 async function processExpiredHolds() {
   if (isRunning) return;
+  // Queries would just buffer and time out while MongoDB is down
+  if (mongoose.connection.readyState !== 1) return;
   isRunning = true;
 
   try {

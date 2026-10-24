@@ -8,9 +8,13 @@ import {
 import { cancelBooking, getMyBookings, verifyPayment } from "../services/bookingservices/bookingapi";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import { User, Mail, Wallet, Calendar, Lock, Pencil, X, Download, QrCode } from "lucide-react";
+import { User, Mail, Wallet, Calendar, CalendarPlus, Lock, Pencil, X, Download, QrCode } from "lucide-react";
+import SavedEvents from "../Components/SavedEvents";
+import { googleCalendarUrl } from "../lib/calendar";
 import { IconTicket } from "@tabler/icons-react";
-import html2pdf from "html2pdf.js";
+
+const calendarUrl = (event) =>
+  googleCalendarUrl({ title: event?.title, date: event?.date, location: event?.location });
 
 function Profile() {
   const [user, setUser] = useState(null);
@@ -124,7 +128,7 @@ function Profile() {
     }
   };
 
-  const handleDownloadPDF = (bookingId, eventTitle) => {
+  const handleDownloadPDF = async (bookingId, eventTitle) => {
     const element = document.getElementById(`ticket-${bookingId}`);
     if (!element) return;
     const cleanTitle = eventTitle ? `${eventTitle.replace(/[^a-zA-Z0-9]/g, "_")}_` : "";
@@ -135,14 +139,28 @@ function Profile() {
       html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
     };
+    // Loaded on demand: html2pdf is ~700 kB and only needed when a ticket is downloaded
+    const { default: html2pdf } = await import("html2pdf.js");
     html2pdf().set(opt).from(element).save();
     toast.success("Downloading PDF Ticket!");
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-slate-50 text-slate-600 font-medium">
-        Loading profile & tickets...
+      <div className="bg-slate-50 min-h-screen py-10 px-4 sm:px-6 lg:px-8" role="status" aria-label="Loading profile and tickets">
+        <div className="max-w-5xl mx-auto space-y-8 animate-pulse">
+          <div className="bg-white rounded-3xl p-8 border border-slate-200 flex items-center gap-4">
+            <div className="w-16 h-16 rounded-2xl bg-slate-200" />
+            <div className="space-y-2 flex-1">
+              <div className="h-5 w-1/3 rounded bg-slate-200" />
+              <div className="h-4 w-1/2 rounded bg-slate-200" />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="h-64 rounded-3xl bg-slate-200" />
+            <div className="h-64 rounded-3xl bg-slate-200" />
+          </div>
+        </div>
       </div>
     );
   }
@@ -212,6 +230,9 @@ function Profile() {
             </div>
           </div>
         </div>
+
+        {/* Saved Events */}
+        <SavedEvents />
 
         {/* Bookings Section */}
         <div className="space-y-4">
@@ -285,6 +306,16 @@ function Profile() {
 
                     {/* Actions */}
                     <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                      {!isCancelled && calendarUrl(booking.event) && (
+                        <a
+                          href={calendarUrl(booking.event)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition"
+                        >
+                          <CalendarPlus size={14} /> Add to Calendar
+                        </a>
+                      )}
                       {!isCancelled && (
                         <button
                           onClick={() => handleDownloadPDF(booking._id, booking.event?.title)}

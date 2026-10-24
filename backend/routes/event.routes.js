@@ -3,6 +3,8 @@ import { getAllEvents, getEventbyId,createEvent,updateEvent,deleteEvent,getEvent
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/role.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
+import validate from "../middlewares/validate.middleware.js";
+import { createEventSchema } from "../validators/schemas.js";
 
 const eventRouter = Router();
 
@@ -21,6 +23,7 @@ eventRouter.route('/create-event').post(
     authMiddleware,
     authorizeRoles("organizer", "admin"), 
     upload.single("image"), // Assuming the image field in the form is named 'image'
+    validate(createEventSchema),
     createEvent
 );
 eventRouter.route('/update-event/:id').patch(
