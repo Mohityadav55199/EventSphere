@@ -12,6 +12,7 @@ import { User, Mail, Wallet, Calendar, CalendarPlus, Lock, Pencil, X, Download, 
 import SavedEvents from "../Components/SavedEvents";
 import { googleCalendarUrl } from "../lib/calendar";
 import { IconTicket } from "@tabler/icons-react";
+import { downloadTicketPDF } from "../utils/ticketPdf";
 
 const calendarUrl = (event) =>
   googleCalendarUrl({ title: event?.title, date: event?.date, location: event?.location });
@@ -139,21 +140,21 @@ function Profile() {
     }
   };
 
-  const handleDownloadPDF = async (bookingId, eventTitle) => {
-    const element = document.getElementById(`ticket-${bookingId}`);
-    if (!element) return;
-    const cleanTitle = eventTitle ? `${eventTitle.replace(/[^a-zA-Z0-9]/g, "_")}_` : "";
-    const opt = {
-      margin: 0.4,
-      filename: `EventSphere_${cleanTitle}Ticket_${bookingId.slice(-6)}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
-    };
-    // Loaded on demand: html2pdf is ~700 kB and only needed when a ticket is downloaded
-    const { default: html2pdf } = await import("html2pdf.js");
-    html2pdf().set(opt).from(element).save();
-    toast.success("Downloading PDF Ticket!");
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  const handleDownloadPDF = async (booking) => {
+    if (!booking) return;
+    try {
+      setDownloadingId(booking._id);
+      toast.info("Generating PDF Admission Pass... 🎟️");
+      await downloadTicketPDF(booking, user);
+      toast.success("PDF Ticket downloaded successfully! 🎉");
+    } catch (err) {
+      console.error("PDF generation error:", err);
+      toast.error(err.message || "Failed to generate PDF ticket. Please try again.");
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   if (loading) {
@@ -329,10 +330,12 @@ function Profile() {
                       )}
                       {!isCancelled && (
                         <button
-                          onClick={() => handleDownloadPDF(booking._id, booking.event?.title)}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition"
+                          onClick={() => handleDownloadPDF(booking)}
+                          disabled={downloadingId === booking._id}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-xl transition cursor-pointer disabled:opacity-50"
                         >
-                          <Download size={14} /> Download PDF Ticket
+                          <Download size={14} className={downloadingId === booking._id ? "animate-bounce" : ""} />
+                          {downloadingId === booking._id ? "Generating..." : "Download PDF Ticket"}
                         </button>
                       )}
                       <button
