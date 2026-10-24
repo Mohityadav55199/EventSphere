@@ -47,30 +47,41 @@ const inMemoryClient = {
 
 // ── Upstash REST adapter (wraps @upstash/redis to match our interface) ─────────
 function makeUpstashAdapter(upstashClient) {
+  let hasFailed = false;
+
+  const safeCall = async (fnName, ...args) => {
+    if (hasFailed) {
+      return inMemoryClient[fnName](...args);
+    }
+    try {
+      if (fnName === "mget") {
+        if (args.length === 0) return [];
+        return await upstashClient.mget(...args);
+      }
+      return await upstashClient[fnName](...args);
+    } catch (err) {
+      console.warn(`⚠️ Upstash Redis operation '${fnName}' failed (${err.message}). Seamlessly switching to in-memory fallback.`);
+      hasFailed = true;
+      _client = inMemoryClient;
+      _client.kind = "in-memory (fallback)";
+      return inMemoryClient[fnName](...args);
+    }
+  };
+
   return {
-    async set(key, value, options = {}) {
-      // @upstash/redis set(key, value, { nx, ex })
-      return upstashClient.set(key, String(value), options);
-    },
-    async get(key) {
-      return upstashClient.get(key);
-    },
-    async del(key) {
-      return upstashClient.del(key);
-    },
-    async keys(pattern) {
-      return upstashClient.keys(pattern);
-    },
-    async mget(...keys) {
-      if (keys.length === 0) return [];
-      return upstashClient.mget(...keys);
-    },
+    kind: "upstash",
+    set: (key, value, options = {}) => safeCall("set", key, value, options),
+    get: (key) => safeCall("get", key),
+    del: (key) => safeCall("del", key),
+    keys: (pattern) => safeCall("keys", pattern),
+    mget: (...keys) => safeCall("mget", ...keys),
   };
 }
 
 // ── ioredis adapter (wraps ioredis to match our interface) ────────────────────
 function makeIoRedisAdapter(ioRedisClient) {
   return {
+    kind: "redis",
     async set(key, value, options = {}) {
       const args = [key, String(value)];
       if (options.ex) { args.push("EX", options.ex); }
@@ -108,12 +119,17 @@ async function getRedisClient() {
     try {
       const { Redis } = await import("@upstash/redis");
       const upstash = new Redis({ url: upstashUrl, token: upstashToken });
+      // Validate connectivity probe with a timeout
+      await Promise.race([
+        upstash.get("__health_ping__"),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Upstash probe timed out")), 2000)),
+      ]);
       _client = makeUpstashAdapter(upstash);
       _client.kind = "upstash";
       console.log("✅ Redis: connected via Upstash REST API");
       return _client;
     } catch (err) {
-      console.warn("⚠️  Upstash REST init failed:", err.message);
+      console.warn("⚠️  Upstash REST init/probe failed:", err.message, "→ falling back to in-memory store.");
     }
   }
 
