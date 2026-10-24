@@ -15,7 +15,8 @@ const genearteAccessTokenAndRefreshToken = async (userOrId) => {
         const accessToken = user.genearteAccessToken();
         const refreshToken = user.refreshAccessToken();
         user.refreshToken = refreshToken;
-        await user.save({ validateBeforeSave: false });
+        // Targeted update: skips full-document save (and the pre-save password hook) on every login
+        await User.updateOne({ _id: user._id }, { $set: { refreshToken } });
         return { accessToken, refreshToken };
 
     } catch (error) {
@@ -142,8 +143,6 @@ const refreshAccessToken = asyncHandler(async(req,res)=>{
             throw new ApiError(400,"Invalid Refresh Token")
         }
         
-        console.log(instantRefreshToken,"refresh:",user?.refreshToken)
-
         if(instantRefreshToken !== user?.refreshToken){
             throw new ApiError(403,"Refresh Token invalid or expired ")
         }
@@ -152,7 +151,6 @@ const refreshAccessToken = asyncHandler(async(req,res)=>{
             secure : true,
         }
         const{accessToken , refreshToken: newRefreshToken} = await genearteAccessTokenAndRefreshToken(user._id)
-        console.log(newRefreshToken)
         return res
         .status(200)
         .cookie("accessToken",accessToken,options)

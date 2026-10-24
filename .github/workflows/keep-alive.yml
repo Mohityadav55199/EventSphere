@@ -2,8 +2,10 @@ name: Keep Render Server Awake
 
 on:
   schedule:
-    # Run every 10 minutes to prevent Render free-tier 15-minute inactivity spin-down
-    - cron: '*/10 * * * *'
+    # GitHub's scheduler is best-effort (runs often start 5-30+ min late and can be skipped),
+    # so this is only a backup. Primary pinger: external cron-job.org hitting /health every 5 min.
+    # 5 minutes is GitHub's minimum interval; Render free tier sleeps after 15 min idle.
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Allows manual trigger from GitHub Actions tab
 
 jobs:
