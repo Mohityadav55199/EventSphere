@@ -37,13 +37,24 @@ function Profile() {
     // Clear URL params immediately so refreshing won't re-trigger
     setSearchParams({});
 
+    let parsedSeats = [];
+    if (seats) {
+      try {
+        parsedSeats = JSON.parse(seats);
+        if (!Array.isArray(parsedSeats)) parsedSeats = [String(parsedSeats)];
+      } catch {
+        parsedSeats = seats.includes(",") ? seats.split(",").map(s => s.trim()) : [seats];
+      }
+    }
+
     const confirm = async () => {
       try {
         await verifyPayment({
           stripe_session_id: sessionId,
           bookingId: bookingId || undefined,
           eventId,
-          seatsBooked: Number(seats) || 1,
+          selectedSeats: parsedSeats.length > 0 ? parsedSeats : undefined,
+          seatsBooked: parsedSeats.length || Number(seats) || 1,
           discount: Number(discount) || 0,
           ticketTier: tierName || "Standard Pass",
           ticketPrice: Number(tierPrice) || 0,

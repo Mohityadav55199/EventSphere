@@ -360,24 +360,26 @@ const verifyPayment = asyncHandler(async (req, res) => {
     razorpay_order_id,
     razorpay_payment_id,
     eventId,
-    selectedSeats, // Now receiving array instead of single number
+    selectedSeats, // Array, JSON string, or retrieved from pending booking
     discount,
     ticketTier,
     ticketPrice,
     bookingId, // pending booking ID from createOrder response
   } = req.body;
 
-  const sessionId = stripe_session_id || razorpay_order_id;
-  if (!sessionId || !eventId || !Array.isArray(selectedSeats)) {
-    throw new ApiError(400, "Session ID, event ID, and selectedSeats array are required");
+  let resolvedEventId = eventId;
+  let resolvedSeats = selectedSeats;
+
+  // If selectedSeats is a JSON string or comma-separated string, parse it
+  if (typeof resolvedSeats === "string") {
+    try {
+      resolvedSeats = JSON.parse(resolvedSeats);
+    } catch {
+      resolvedSeats = resolvedSeats.includes(",") ? resolvedSeats.split(",").map(s => s.trim()) : [resolvedSeats];
+    }
   }
 
-  const seatsBooked = selectedSeats.length;
-
-  const event = await Event.findById(eventId);
-  if (!event) throw new ApiError(404, "Event not found");
-
-  // ── Find or handle pending booking ─────────────────────────────────────────
+  // If bookingId is provided, retrieve eventId and selectedSeats directly from the pending booking doc
   let booking = null;
   if (bookingId) {
     booking = await Booking.findOne({
@@ -390,15 +392,37 @@ const verifyPayment = asyncHandler(async (req, res) => {
       await booking.save();
       throw new ApiError(409, "Your seat hold has expired. Please start the booking again.");
     }
+    if (booking) {
+      if (!resolvedEventId) resolvedEventId = String(booking.event);
+      if (!Array.isArray(resolvedSeats) || resolvedSeats.length === 0) {
+        resolvedSeats = booking.selectedSeats;
+      }
+    }
   }
 
+  // Fallback if selectedSeats is still not an array
+  if (!Array.isArray(resolvedSeats) || resolvedSeats.length === 0) {
+    const seatCount = Number(req.body.seatsBooked) || 1;
+    resolvedSeats = Array.from({ length: seatCount }, (_, i) => `Seat-${i + 1}`);
+  }
+
+  const sessionId = stripe_session_id || razorpay_order_id;
+  if (!sessionId || !resolvedEventId) {
+    throw new ApiError(400, "Session ID and event ID are required");
+  }
+
+  const seatsBooked = resolvedSeats.length;
+
+  const event = await Event.findById(resolvedEventId);
+  if (!event) throw new ApiError(404, "Event not found");
+
   // ── LAYER 1: Confirm hold (remove from Redis) ───────────────────────────────
-  await confirmHold(String(eventId), String(req.user._id), selectedSeats);
+  await confirmHold(String(resolvedEventId), String(req.user._id), resolvedSeats);
 
   // ── LAYER 2: Atomic MongoDB seat decrement ──────────────────────────────────
   // This is the final guard — even if Redis hold somehow failed, this
   // atomic op prevents overselling at the DB level.
-  await atomicDecrementSeats(eventId, selectedSeats);
+  await atomicDecrementSeats(resolvedEventId, resolvedSeats);
 
   // ── Create / update booking as confirmed ───────────────────────────────────
   const basePrice = ticketPrice || event.Price;
@@ -406,6 +430,8 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
   if (booking) {
     // Update the pending hold booking to confirmed
+    booking.selectedSeats = resolvedSeats;
+    booking.seatsBooked = seatsBooked;
     booking.stripeSessionId = sessionId;
     booking.stripePaymentIntentId = razorpay_payment_id || `pi_${sessionId}`;
     booking.amountPaid = amountPaid;
@@ -419,7 +445,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
     booking = await Booking.create({
       user: req.user._id,
       event: event._id,
-      selectedSeats,
+      selectedSeats: resolvedSeats,
       seatsBooked,
       ticketTier: ticketTier || "Standard Pass",
       ticketPrice: basePrice,
@@ -479,7 +505,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
   });
 
   // ── LAYER 3: Broadcast final seat count ─────────────────────────────────────
-  await emitSeatUpdate(eventId);
+  await emitSeatUpdate(resolvedEventId);
 
   res.status(201).json(
     new ApiResponse(201, { booking, earnedPoints, remainingPoints: user.walletPoints },
