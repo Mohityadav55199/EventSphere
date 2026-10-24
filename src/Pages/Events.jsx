@@ -93,6 +93,7 @@ function Events() {
       setEventSearch(searchQuery);
       if (setSearchQuery) setSearchQuery("");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   // Filter states

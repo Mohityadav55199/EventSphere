@@ -94,7 +94,7 @@ function AddEvent() {
       }
 
       toast.info("Uploading poster and publishing event...");
-      const res = await createEvent(formData);
+      await createEvent(formData);
       toast.success("Event created successfully! 🎉");
       reset();
       setImagePreview(null);
