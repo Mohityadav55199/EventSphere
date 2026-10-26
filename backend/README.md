@@ -81,5 +81,5 @@ npm test
 
 ## 🛡️ Production Health & Diagnostics
 
-- `GET /health`: Instant lightweight keep-alive ping for cloud infrastructure (safe for Render 15-minute sleep prevention).
+- `GET /health`: Instant lightweight health probe used by the frontend to detect cold start status and server readiness.
 - `GET /health?deep=1`: Deep diagnostic probe pinging MongoDB admin database and Redis. Returns HTTP 200 with latency if all healthy, or HTTP 503 Service Unavailable if the database is unreachable.

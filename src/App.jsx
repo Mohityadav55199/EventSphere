@@ -75,8 +75,12 @@ function App() {
       <Footer />
     </div>
   ) : (
-    <div className="min-h-screen flex justify-center items-center bg-slate-50 text-slate-500 font-medium">
-      Initializing EventSphere...
+    <div className="min-h-screen flex flex-col justify-center items-center bg-slate-50 text-slate-600 gap-2 font-medium px-4 text-center">
+      <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-1" />
+      <span>Initializing EventSphere...</span>
+      <span className="text-xs text-slate-400 max-w-sm">
+        Connecting to cloud backend. Initial boot may take up to a minute on Render’s free tier.
+      </span>
     </div>
   );
 }

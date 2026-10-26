@@ -168,21 +168,24 @@ npm run build   # Production bundle built in ~18s
    cd EventSphere
    ```
 
-2. **Setup and launch backend**:
+2. **Install dependencies**:
    ```bash
-   cd backend
+   # Install root and client dependencies
    npm install
-   # Configure backend/.env
+
+   # Install backend dependencies
+   cd backend && npm install && cd ..
+   ```
+
+3. **Launch Frontend & Backend Concurrently**:
+   ```bash
+   # From project root - starts both Vite client (:5173) and Express backend (:5000)
    npm run dev
    ```
 
-3. **Setup and launch client**:
-   ```bash
-   # From project root
-   npm install
-   # Configure .env
-   npm run dev
-   ```
+   *Alternatively, run them individually:*
+   - Client only: `npm run dev:client`
+   - Backend only: `npm run dev:server`
 
 4. **Access the application**: Open [http://localhost:5173](http://localhost:5173) in your browser.
 

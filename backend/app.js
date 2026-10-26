@@ -67,9 +67,8 @@ app.get("/", (req, res) => {
     });
 });
 
-// Plain /health is instant and never touches the database (safe for frequent keep-alive pings).
-// /health?deep=1 also pings MongoDB and Redis and returns 503 if the database is unreachable,
-// so an external monitor (cron-job.org) can alert on real outages.
+// Plain /health is instant and lightweight (used by client to check server readiness and cold start).
+// /health?deep=1 also checks MongoDB and Redis status.
 app.get("/health", async (req, res) => {
     const dbStates = ["disconnected", "connected", "connecting", "disconnecting"];
     const body = {

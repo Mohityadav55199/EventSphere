@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { registerUser } from "../../services/authservices/authapi";
 import { useDispatch } from "react-redux";
@@ -18,11 +18,15 @@ import {
   Ticket, 
   Megaphone,
   CheckCircle2,
-  Loader2 
+  Loader2,
+  CloudLightning
 } from "lucide-react";
+import useServerStatus from "../../hooks/useServerStatus";
 
 const Register = () => {
   const [showPassword, setShowPassword] = useState(false);
+  const [isWakingServer, setIsWakingServer] = useState(false);
+  const serverStatus = useServerStatus();
   const {
     register,
     handleSubmit,
@@ -39,6 +43,18 @@ const Register = () => {
   const selectedRole = watch("role");
   const dispatch = useDispatch();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let timer;
+    if (isSubmitting) {
+      timer = setTimeout(() => {
+        setIsWakingServer(true);
+      }, 1500);
+    } else {
+      setIsWakingServer(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isSubmitting]);
 
   const onSubmit = async (data) => {
     try {
@@ -82,6 +98,13 @@ const Register = () => {
             Discover live experiences or start hosting your own events
           </p>
         </div>
+
+        {serverStatus === "unreachable" && (
+          <div role="status" className="mb-4 p-3 rounded-xl bg-amber-950/50 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+            <span>Waking up the server. This can take up to a minute on the free tier.</span>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           {/* Full Name */}
@@ -248,6 +271,14 @@ const Register = () => {
               </>
             )}
           </button>
+
+          {/* Waking Server Feedback */}
+          {isWakingServer && (
+            <div role="status" className="p-3 rounded-xl bg-indigo-950/70 border border-indigo-500/30 text-indigo-200 text-xs flex items-center justify-center gap-2 animate-pulse">
+              <CloudLightning className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Connecting to cloud server... (Render free tier spin-up in progress)</span>
+            </div>
+          )}
 
           {/* Security Badge */}
           <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 pt-1">
