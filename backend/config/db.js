@@ -1,5 +1,42 @@
 import mongoose from "mongoose";
 import { DB_NAME } from "../constant.js";
+import { execSync } from "node:child_process";
+
+/**
+ * Fallback SRV resolution via system nslookup
+ * Fixes Node.js querySrv ECONNREFUSED on Windows or ISPs that block UDP port 53
+ */
+function resolveSrvViaNslookup(host) {
+  try {
+    const output = execSync(`nslookup -type=SRV _mongodb._tcp.${host}`, {
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "ignore"],
+    });
+    const hosts = [];
+    const regex = /svr hostname\s*=\s*([^\s]+)/gi;
+    let m;
+    while ((m = regex.exec(output)) !== null) {
+      hosts.push(`${m[1]}:27017`);
+    }
+    return hosts;
+  } catch {
+    return [];
+  }
+}
+
+function buildReplicaSetUri(srvUri, hosts) {
+  const match = srvUri.match(/mongodb\+srv:\/\/([^@]+)@([^/?]+)(\/[^?]*)?(\?.*)?/);
+  if (!match) return null;
+  const [_, auth, , dbPath = `/${DB_NAME}`, query = ""] = match;
+  const hostsStr = hosts.join(",");
+  const params = new URLSearchParams(query.replace(/^\?/, ""));
+  if (!params.has("ssl")) params.set("ssl", "true");
+  if (!params.has("authSource")) params.set("authSource", "admin");
+  if (!params.has("retryWrites")) params.set("retryWrites", "true");
+  if (!params.has("w")) params.set("w", "majority");
+  return `mongodb://${auth}@${hostsStr}${dbPath}?${params.toString()}`;
+}
 
 /**
  * Sanitize MongoDB Connection String
@@ -82,6 +119,35 @@ const connectDB = async () => {
       return connectInstance;
     } catch (error) {
       console.error(`❌ Primary DB connection failed (${error.message}).`);
+
+      // Automatic fallback for Node.js querySrv ECONNREFUSED (common on Windows/ISPs blocking port 53 UDP)
+      if (
+        sanitizedUri.startsWith("mongodb+srv://") &&
+        (error.message.includes("querySrv") || error.message.includes("ECONNREFUSED"))
+      ) {
+        console.log("🔄 Detected Windows/ISP DNS SRV resolution issue. Auto-resolving replica set shards via system DNS...");
+        const srvHostMatch = sanitizedUri.match(/mongodb\+srv:\/\/[^@]+@([^/?]+)/);
+        if (srvHostMatch && srvHostMatch[1]) {
+          const shards = resolveSrvViaNslookup(srvHostMatch[1]);
+          if (shards.length > 0) {
+            const directUri = buildReplicaSetUri(sanitizedUri, shards);
+            if (directUri) {
+              try {
+                const directConn = await mongoose.connect(directUri, {
+                  dbName: DB_NAME,
+                  serverSelectionTimeoutMS: 10000,
+                });
+                console.log(`✅ MongoDB connected successfully via direct replica set: ${directConn.connection.host} (DB: ${directConn.connection.name})`);
+                isConnecting = false;
+                return directConn;
+              } catch (directErr) {
+                console.error(`❌ Direct replica set connection failed: ${directErr.message}`);
+              }
+            }
+          }
+        }
+      }
+
       if (error.message && error.message.includes("bad auth")) {
         console.error("🔑 AUTHENTICATION ERROR TROUBLESHOOTING:");
         console.error(" 1. Check your MONGODB_URI in Render dashboard environment variables.");
