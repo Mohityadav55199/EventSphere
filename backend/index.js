@@ -10,6 +10,7 @@ import { initSocket } from "./socket.js";
 import http from "http";
 import { autoSeedEventsIfEmpty } from "./utils/autoSeed.js";
 import { startHoldExpiryJob } from "./jobs/holdExpiry.js";
+import { startDemoRefreshJob } from "./jobs/demoRefresh.js";
 import { autoMigrateAvailableSeats } from "./utils/autoMigrateAvailableSeats.js";
 
 validateEnv();
@@ -36,6 +37,9 @@ connectDB()
 
       // Start the seat hold expiry cron job (cleans up abandoned checkouts every 60s)
       startHoldExpiryJob();
+
+      // DEMO_MODE=true only: keeps the seeded demo events in the future (see jobs/demoRefresh.js)
+      startDemoRefreshJob();
     } catch (err) {
       console.error("Post-connection setup warning:", err.message);
     }
