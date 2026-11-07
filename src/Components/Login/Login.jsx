@@ -46,7 +46,6 @@ function Login() {
         })
       );
       localStorage.setItem("accessToken", response.data.accessToken);
-      localStorage.setItem("userId", response.data.user._id);
 
       toast.success("Welcome back! Redirecting...");
       setTimeout(() => {

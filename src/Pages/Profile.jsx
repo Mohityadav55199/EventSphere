@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
+import { setCredentials, updateUser } from "../store/authslice";
 import {
   getUserProfile,
   updateUserProfile,
@@ -18,6 +20,8 @@ const calendarUrl = (event) =>
   googleCalendarUrl({ title: event?.title, date: event?.date, location: event?.location });
 
 function Profile() {
+  const dispatch = useDispatch();
+  const authUser = useSelector((state) => state.auth.user);
   const [user, setUser] = useState(null);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,46 +31,20 @@ function Profile() {
   useEffect(() => {
     const sessionId = searchParams.get("session_id");
     const bookingId = searchParams.get("booking_id");
-    const eventId   = searchParams.get("event_id");
-    const seats     = searchParams.get("seats");
-    const discount  = searchParams.get("discount");
-    const tierName  = searchParams.get("tier");
-    const tierPrice = searchParams.get("price");
-
-    if (!sessionId) return;
+    if (!sessionId || !bookingId) return;
 
     // Clear URL params immediately so refreshing won't re-trigger
     setSearchParams({});
 
-    let parsedSeats = [];
-    if (seats) {
-      try {
-        parsedSeats = JSON.parse(seats);
-        if (!Array.isArray(parsedSeats)) parsedSeats = [String(parsedSeats)];
-      } catch {
-        parsedSeats = seats.includes(",") ? seats.split(",").map(s => s.trim()) : [seats];
-      }
-    }
-
+    // Only the ids are sent: the server reads seats, price and discount from the booking itself
     const confirm = async () => {
       try {
-        await verifyPayment({
-          stripe_session_id: sessionId,
-          bookingId: bookingId || undefined,
-          eventId,
-          selectedSeats: parsedSeats.length > 0 ? parsedSeats : undefined,
-          seatsBooked: parsedSeats.length || Number(seats) || 1,
-          discount: Number(discount) || 0,
-          ticketTier: tierName || "Standard Pass",
-          ticketPrice: Number(tierPrice) || 0,
-        });
+        await verifyPayment({ stripe_session_id: sessionId, bookingId });
         toast.success("🎉 Payment successful! Your tickets are confirmed.");
-        // Refresh bookings list
         const myBookings = await getMyBookings();
         setBookings(myBookings?.data || []);
       } catch (err) {
-        const msg = err?.message || err?.data?.message || "Payment verification failed";
-        toast.error(msg);
+        toast.error(err?.message || err?.data?.message || "Payment verification failed");
       }
     };
 
@@ -110,6 +88,7 @@ function Profile() {
         email: editEmail,
       });
       setUser(updated.data);
+      dispatch(updateUser({ name: updated.data.name, email: updated.data.email })); // header shows the new name
       toast.success("Profile updated successfully");
       setIsEditing(false);
     } catch (error) {
@@ -119,8 +98,10 @@ function Profile() {
 
   const handleChangePassword = async () => {
     try {
-      await resetPassword({ oldPassword, newPassword });
-      toast.success("Password changed successfully");
+      const res = await resetPassword({ oldPassword, newPassword });
+      // The server signed out every other device and issued fresh tokens for this one
+      dispatch(setCredentials({ user: authUser, accessToken: res.data.accessToken, refreshToken: res.data.refreshToken }));
+      toast.success("Password changed. Other devices have been signed out.");
       setIsChangingPassword(false);
       setOldPassword("");
       setNewPassword("");

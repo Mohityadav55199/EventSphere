@@ -67,7 +67,6 @@ const Register = () => {
         })
       );
       localStorage.setItem("accessToken", response.data.accessToken);
-      localStorage.setItem("userId", response.data.user._id);
 
       reset();
       toast.success("Account created successfully! Welcome to EventSphere 🎉");

@@ -14,8 +14,10 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
+import { baseURL } from "../config/baseURL";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+// Same URL (and fallback) the REST client uses, so sockets never point at localhost in production
+const BACKEND_URL = baseURL;
 const POLL_INTERVAL_MS = 30_000; // 30s HTTP fallback polling
 
 /**

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import { io } from "socket.io-client";
+import { baseURL } from "../../config/baseURL";
 import { MessageSquare, X } from "lucide-react";
 import { IconSend } from "@tabler/icons-react";
 import { useSelector } from "react-redux";
@@ -25,7 +26,7 @@ const ChatBox = ({ eventId }) => {
   useEffect(() => {
     if (!isOpen || !eventId || !token) return;
 
-    const newSocket = io(import.meta.env.VITE_BACKEND_URL, {
+    const newSocket = io(baseURL, {
       auth: { token },
       transports: ["websocket"],
     });
@@ -33,11 +34,9 @@ const ChatBox = ({ eventId }) => {
     setSocket(newSocket);
 
     newSocket.on("connect", () => {
-      console.log("✅ Connected:", newSocket.id);
       newSocket.emit("joinRoom", { eventId });
     });
 
-    newSocket.on("joined", (msg) => console.log(msg));
 
     newSocket.on("chatHistory", (history) => {
       setMessages(history);
@@ -51,7 +50,6 @@ const ChatBox = ({ eventId }) => {
     newSocket.on("stopTyping", () => setTypingUser(null));
 
     newSocket.on("error", (err) => {
-      console.error("❌ Error:", err)
       toast.error(err, { position: "top-right" });
     });
 

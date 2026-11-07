@@ -61,9 +61,9 @@ function Dashboard() {
 
   const handleUpdate = async (id, data) => {
     try {
-      await updateEvent(id, data);
+      const res = await updateEvent(id, data);
+      setEvents((prev) => prev.map((ev) => (ev._id === id ? { ...ev, ...res.data } : ev)));
       toast.success("Event updated successfully");
-      window.location.reload();
     } catch (err) {
       toast.error(err.message || "Failed to update event");
     }

@@ -50,21 +50,7 @@ export const logoutUser = async () => {
     }
     const response = await API.post("/api/v1/users/logout");
     localStorage.removeItem("accessToken");
-    console.log(localStorage.getItem("accessToken"))
     return response.data;
-  } catch (error) {
-    throw error.response ? error.response.data : error;
-  }
-}
-
-export const refreshAccessToken = async () => {
-  try {
-    const refreshToken = localStorage.getItem("refreshToken");
-    if (!refreshToken) throw new Error("No refresh token found");
-
-    const response = await API.post("/api/v1/users/refresh-token", { refreshToken });
-    localStorage.setItem("accessToken", response.data.accessToken);
-    return response.data.accessToken;
   } catch (error) {
     throw error.response ? error.response.data : error;
   }

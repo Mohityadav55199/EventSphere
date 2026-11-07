@@ -40,7 +40,6 @@ const ReviewForm = ({ eventId, onSuccess, initialData = null }) => {
       if (onSuccess) onSuccess(res);
 
       toast.success(`Review ${initialData ? "updated" : "posted"} successfully`);
-      window.location.reload();
     } catch (err) {
       setError(err?.message || "Something went wrong");
       toast.error(err?.message || "Something went wrong");

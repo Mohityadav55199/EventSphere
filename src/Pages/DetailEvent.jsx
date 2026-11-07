@@ -19,6 +19,7 @@ import SeatMap from "../Components/SeatMap";
 
 function DetailEvent() {
   const { id } = useParams();
+  const [reviewsVersion, setReviewsVersion] = useState(0); // bump to make ReviewCard refetch
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -523,9 +524,9 @@ function DetailEvent() {
         {/* Reviews Section */}
         <div className="p-6 sm:p-8 bg-white/90 backdrop-blur-md shadow-md border border-slate-200/80 rounded-3xl space-y-4">
           <h2 className="text-xl font-black text-slate-900">Community Reviews & Ratings</h2>
-          {user && <ReviewForm eventId={id} onSuccess={() => {}} />}
+          {user && <ReviewForm eventId={id} onSuccess={() => setReviewsVersion((v) => v + 1)} />}
           <div className="pt-4">
-            <ReviewCard eventId={id} />
+            <ReviewCard eventId={id} refreshKey={reviewsVersion} />
           </div>
         </div>
       </div>

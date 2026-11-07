@@ -1,19 +1,17 @@
 import React, { useEffect, useState } from "react";
+import { useSelector } from "react-redux";
 import { Star, Edit, Trash2 } from "lucide-react";
 import { deleteReview, getEventReviews } from "../../services/reviewservices/reviewapi";
 import ReviewForm from "./PostReview";
 
-function ReviewCard({ eventId }) {
+function ReviewCard({ eventId, refreshKey = 0 }) {
   const [reviewsData, setReviewsData] = useState(null);
   const [editingReview, setEditingReview] = useState(null);
-  const [currentUserId, setCurrentUserId] = useState(null);
+  // The logged-in user comes from the Redux store (set from the /profile response), not localStorage
+  const currentUserId = useSelector((state) => state.auth.user?._id);
+  const isAdmin = useSelector((state) => state.auth.user?.role === "admin");
   const [expandedReviews, setExpandedReviews] = useState({}); // track expanded comments
 
-  // ✅ Get current user id from token or localStorage
-  useEffect(() => {
-    const userId = localStorage.getItem("userId"); // store userId at login
-    setCurrentUserId(userId);
-  }, []);
 
   // ✅ Fetch reviews
   const fetchReviews = React.useCallback(async () => {
@@ -27,7 +25,7 @@ function ReviewCard({ eventId }) {
 
   useEffect(() => {
     if (eventId) fetchReviews();
-  }, [eventId, fetchReviews]);
+  }, [eventId, fetchReviews, refreshKey]);
 
   // ✅ Delete review
   const handleDelete = async (reviewId) => {
@@ -123,16 +121,20 @@ function ReviewCard({ eventId }) {
                   – {(review.user?.name || "Anonymous").toUpperCase()}
                 </p>
 
-                {/* Edit + Delete buttons (only if current user is the author) */}
-                {currentUserId === review.user?._id && (
+                {/* Authors can edit + delete; admins can delete any review (moderation) */}
+                {(currentUserId === review.user?._id || isAdmin) && (
                   <div className="flex space-x-2 absolute top-2 right-2">
+                    {currentUserId === review.user?._id && (
+                      <button
+                        onClick={() => setEditingReview(review)}
+                        className="p-1 rounded hover:bg-gray-200"
+                        aria-label="Edit review"
+                      >
+                        <Edit size={14} className="text-blue-600" />
+                      </button>
+                    )}
                     <button
-                      onClick={() => setEditingReview(review)}
-                      className="p-1 rounded hover:bg-gray-200"
-                    >
-                      <Edit size={14} className="text-blue-600" />
-                    </button>
-                    <button
+                      aria-label="Delete review"
                       onClick={() => handleDelete(review._id)}
                       className="p-1 rounded hover:bg-gray-200"
                     >

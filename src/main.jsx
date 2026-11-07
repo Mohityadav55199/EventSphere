@@ -45,19 +45,23 @@ const router = createBrowserRouter(
         </Protected>
       } />
       <Route path='/reset-password/:token' element={<Suspense fallback={<PageLoader />}><ResetPassword /></Suspense>} />
-      <Route path='/profile' element={<Suspense fallback={<PageLoader />}><Profile /></Suspense>} />
+      <Route path='/profile' element={
+        <Protected authenication={true}>
+          <Suspense fallback={<PageLoader />}><Profile /></Suspense>
+        </Protected>
+      } />
       <Route path='/events' element={<Suspense fallback={<PageLoader />}><Events /></Suspense>} />
       <Route path='/about' element={<Suspense fallback={<PageLoader />}><About /></Suspense>} />
       <Route path='/contact' element={<Suspense fallback={<PageLoader />}><Contact /></Suspense>} />
       <Route path='/events/:id' element={<Suspense fallback={<PageLoader />}><DetailEvent /></Suspense>} />
       <Route path='/event/:id' element={<Suspense fallback={<PageLoader />}><DetailEvent /></Suspense>} />
       <Route path='/dashboard' element={
-        <Protected authenication={true}>
+        <Protected authenication={true} roles={["organizer", "admin"]}>
           <Suspense fallback={<PageLoader />}><Dashboard /></Suspense>
         </Protected>
       } />
       <Route path='/create-event' element={
-        <Protected authenication={true}>
+        <Protected authenication={true} roles={["organizer", "admin"]}>
           <Suspense fallback={<PageLoader />}><AddEvent /></Suspense>
         </Protected>
       } />
