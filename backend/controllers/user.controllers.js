@@ -6,6 +6,11 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { sendPasswordResetEmail } from "../utils/emailService.js";
 import crypto from "crypto";
 
+// Frontend (Vercel) and API (Render) are different sites, so auth cookies must be SameSite=None; Secure.
+// Clearing a cookie only works with the same attributes it was set with.
+const AUTH_COOKIE_OPTIONS = { httpOnly: true, secure: true, sameSite: "none" };
+const SESSION_COOKIE_OPTIONS = { ...AUTH_COOKIE_OPTIONS, maxAge: 7 * 24 * 60 * 60 * 1000 };
+
 const genearteAccessTokenAndRefreshToken = async (userOrId) => {
     try {
         const user = (typeof userOrId === "object" && userOrId !== null && typeof userOrId.genearteAccessToken === "function")
@@ -116,15 +121,10 @@ const logoutUser = asyncHandler(async(req, res) => {
         {
             new: true,
         })
-        const options = {
-            httpOnly: true,
-            secure: true,
-            expires: new Date(0)
-        }
         return res
         .status(200)
-        .cookie("accessToken", "", options)
-        .cookie("refreshToken", "", options)
+        .clearCookie("accessToken", AUTH_COOKIE_OPTIONS)
+        .clearCookie("refreshToken", AUTH_COOKIE_OPTIONS)
         .json(
             new ApiResponse(200, {}, "User logged out successfully")
         )
@@ -206,52 +206,43 @@ const resetPassword = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, {}, "Password reset successful. Please log in."));
 });
 
-const changePassword = asyncHandler(async(req,res)=>{
- try {
-       const {oldPassword,newPassword} = req.body;
+const changePassword = asyncHandler(async (req, res) => {
+    const { oldPassword, newPassword } = req.body; // validated by changePasswordSchema
 
-       const user = await User.findById(req.user?._id)
-       const isOldPasswordCorrect = await user.isPasswordCorrect(oldPassword)
-       if(!isOldPasswordCorrect){
-           throw new ApiError(400,"Wrong Old Password")
-       }
-       user.password = newPassword;
-       await user.save({validateBeforeSave:false})
-       return res.
-           status(201)
-           .json(
-               new ApiResponse(201,{},"Password Changed Succesfully")
-           )
- } catch (error) {
-      throw new ApiError(400,error?.message || "Something went wrong")
- }
-    
-})
+    const user = await User.findById(req.user._id);
+    if (!(await user.isPasswordCorrect(oldPassword))) {
+        throw new ApiError(400, "Current password is incorrect");
+    }
+    if (oldPassword === newPassword) {
+        throw new ApiError(400, "New password must be different from the current one");
+    }
+    user.password = newPassword; // hashed by the pre-save hook
+    await user.save({ validateBeforeSave: false });
 
-const updateAccountDetails = asyncHandler(async(req,res)=>{
-    const {name,email} = req.body
-    if(!name || !email){
-        throw new ApiError(400,"All fields are required")
+    // Issuing a new refresh token replaces the stored one, which signs out every other device
+    const { accessToken, refreshToken } = await genearteAccessTokenAndRefreshToken(user);
+    return res
+        .status(200)
+        .cookie("accessToken", accessToken, SESSION_COOKIE_OPTIONS)
+        .cookie("refreshToken", refreshToken, SESSION_COOKIE_OPTIONS)
+        .json(new ApiResponse(200, { accessToken, refreshToken }, "Password changed. Other devices have been signed out."));
+});
+
+const updateAccountDetails = asyncHandler(async (req, res) => {
+    const { name, email } = req.body; // validated + lowercased by updateAccountSchema
+
+    const taken = await User.exists({ email, _id: { $ne: req.user._id } });
+    if (taken) {
+        throw new ApiError(409, "That email is already used by another account");
     }
     const user = await User.findByIdAndUpdate(
-        req.user?._id,
-        {
-            $set:{
-                name,
-                email // email : email {another way of doing it}
-            }
-        },
-        {
-            new : true
-        }
-    ).select("-password") // remove password from the response
+        req.user._id,
+        { $set: { name, email } },
+        { new: true, runValidators: true }
+    ).select("-password -refreshToken");
 
-    return res
-    .status(201)
-    .json(
-        new ApiResponse(201,user,"Account Details Updated Successfully")
-    )
-})
+    return res.status(200).json(new ApiResponse(200, user, "Account Details Updated Successfully"));
+});
 
 const getCurrentUser = asyncHandler(async(req,res)=>{
     const userId = req.user?._id; // authMiddleware already set this
@@ -265,9 +256,9 @@ const getCurrentUser = asyncHandler(async(req,res)=>{
         throw new ApiError(404, "User not found");
     }
     return res
-    .status(201)
+    .status(200)
     .json(
-        new ApiResponse(201,user,"Current User Fetched Successfully")
+        new ApiResponse(200,user,"Current User Fetched Successfully")
     )
 })
 

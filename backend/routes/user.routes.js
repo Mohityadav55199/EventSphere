@@ -3,7 +3,7 @@ import { rateLimit } from "express-rate-limit";
 import { changePassword, forgotPassword, getCurrentUser, loginUser, logoutUser, refreshAccessToken, registerUser, resetPassword, updateAccountDetails } from "../controllers/user.controllers.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import validate from "../middlewares/validate.middleware.js";
-import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "../validators/schemas.js";
+import { changePasswordSchema, forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema, updateAccountSchema } from "../validators/schemas.js";
 
 // Tight limit against password guessing; successful logins don't count against it
 const loginLimiter = rateLimit({
@@ -28,7 +28,7 @@ userRouter.route("/refresh-token").post(refreshAccessToken)
 userRouter.route("/forgot-password").post(resetRequestLimiter, validate(forgotPasswordSchema), forgotPassword)
 userRouter.route("/reset-password/:token").post(validate(resetPasswordSchema), resetPassword)
 userRouter.route("/profile").get(authMiddleware,getCurrentUser)
-userRouter.route("/change-password").post(authMiddleware,changePassword)
-userRouter.route("/update-account").patch(authMiddleware,updateAccountDetails)
+userRouter.route("/change-password").post(authMiddleware, validate(changePasswordSchema), changePassword)
+userRouter.route("/update-account").patch(authMiddleware, validate(updateAccountSchema), updateAccountDetails)
 
 export default userRouter

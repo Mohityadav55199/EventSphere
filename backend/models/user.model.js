@@ -1,6 +1,7 @@
 import mongoose, { Schema } from "mongoose"; 
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "node:crypto";
 
 const userSchema = new Schema({
    name : {
@@ -73,7 +74,10 @@ userSchema.methods.refreshAccessToken = function(){
     },
     process.env.REFRESH_TOKEN_SECRET,
     {
-        expiresIn: process.env.REFRESH_TOKEN_EXPIRY
+        expiresIn: process.env.REFRESH_TOKEN_EXPIRY,
+        // Unique id per token: without it two tokens issued in the same second are byte-identical,
+        // so "rotating" the token (password change, re-login) would not actually revoke the old one
+        jwtid: crypto.randomUUID()
     }
 )
 }
