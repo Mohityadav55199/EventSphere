@@ -23,7 +23,6 @@ function DetailEvent() {
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [BookingAvailable, setBookingAvailable] = useState(false);
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [usePoints, setUsePoints] = useState(false);
   const [couponCode, setCouponCode] = useState("");
@@ -74,9 +73,6 @@ function DetailEvent() {
           : [{ name: "Standard Pass", price: evData.Price, description: "General Admission Entry" }];
         setSelectedTier(tiers[0]);
 
-        if (evData.activeStatus === "active") {
-          setBookingAvailable(true);
-        }
       } catch {
         setError("Failed to load event details.");
       } finally {
@@ -86,12 +82,9 @@ function DetailEvent() {
     fetchEvent();
   }, [id]);
 
-  // Disable booking if live seat count drops to zero
-  useEffect(() => {
-    if (!seatLoading && isSoldOut) {
-      setBookingAvailable(false);
-    }
-  }, [isSoldOut, seatLoading]);
+  // Derived on every render, so the button comes back when a hold expires and seats free up again
+  const hasEnded = event?.date ? new Date(event.date) < new Date() : false;
+  const BookingAvailable = event?.activeStatus === "active" && !hasEnded;
 
   const handleBooking = async () => {
     if (isBooking) return;
@@ -483,7 +476,7 @@ function DetailEvent() {
           <div className="flex items-center justify-between pt-4 border-t border-slate-100">
             <div>
               <span className="text-xs text-slate-400 block">Selected Tier ({selectedTier?.name || "Pass"})</span>
-              <span className="text-2xl font-black text-indigo-600">₹{selectedTier?.price || event?.Price}</span>
+              <span className="text-2xl font-black text-indigo-600">₹{selectedTier?.price ?? event?.Price}</span>
             </div>
 
             <div className="flex gap-3">
@@ -514,7 +507,7 @@ function DetailEvent() {
                   disabled
                   className="bg-slate-200 text-slate-400 py-2.5 px-5 rounded-full text-xs font-bold cursor-not-allowed"
                 >
-                  {isSoldOut ? "Sold Out" : "Not Available"}
+                  {hasEnded ? "Event Ended" : event?.activeStatus === "cancelled" ? "Cancelled" : isSoldOut ? "Sold Out" : "Not Available"}
                 </button>
               )}
             </div>
@@ -568,7 +561,7 @@ function DetailEvent() {
                   <span className="text-[10px] uppercase font-bold text-indigo-500 dark:text-indigo-400 block tracking-wider">Selected Tier</span>
                   <span className="text-sm font-extrabold text-indigo-950 dark:text-indigo-200">{selectedTier?.name || "Standard Pass"}</span>
                 </div>
-                <span className="text-base font-black text-indigo-600 dark:text-indigo-400">₹{selectedTier?.price || event?.Price}</span>
+                <span className="text-base font-black text-indigo-600 dark:text-indigo-400">₹{selectedTier?.price ?? event?.Price}</span>
               </div>
 
               {/* Interactive Seat Map */}

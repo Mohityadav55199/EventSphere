@@ -14,6 +14,7 @@
  */
 import http from "node:http";
 import { startTestApp, stopTestApp, makeEvent } from "../tests/integration/helpers.js";
+import { seatIdAt } from "../utils/seatLayout.js";
 
 const USERS = Number(process.env.USERS) || 300;
 const SEATS = Number(process.env.SEATS) || 30;
@@ -39,7 +40,7 @@ const attendees = Array.from({ length: USERS }, (_, i) => new ctx.User({
 await ctx.User.collection.insertMany(attendees.map((u) => u.toObject()));
 const tokens = attendees.map((u) => u.genearteAccessToken());
 
-const seatIds = Array.from({ length: SEATS }, (_, i) => `S${i + 1}`);
+const seatIds = Array.from({ length: SEATS }, (_, i) => seatIdAt(i)); // real seat-map ids (A1..C10 for 30 seats)
 const fire = async (token) => {
   const seat = seatIds[Math.floor(Math.random() * SEATS)];
   const started = performance.now();

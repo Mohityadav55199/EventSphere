@@ -157,3 +157,37 @@ test("admins can remove any review; other users cannot", async () => {
   assert.equal((await request(ctx.app).delete(`/api/v1/reviews/delete-review/${id}`).set(auth(stranger.token))).status, 403);
   assert.equal((await request(ctx.app).delete(`/api/v1/reviews/delete-review/${id}`).set(auth(admin.token))).status, 200);
 });
+
+// ── Seats, dates and attendee privacy ─────────────────────────────────────────
+
+const order = (token, eventId, seats) =>
+  request(ctx.app).post(`/api/v1/bookings/create-order/${eventId}`).set(auth(token)).send({ selectedSeats: seats });
+
+test("only seats that exist on the seat map can be booked (no selling past capacity)", async () => {
+  const org = await makeUser(ctx.User, "organizer");
+  const event = await makeEvent(ctx.Event, org.user._id, { capacity: 12 }); // seats A1..A10, B1, B2
+  const u = await makeUser(ctx.User);
+  assert.equal((await order(u.token, event._id, ["VIP-1"])).status, 400);
+  assert.equal((await order(u.token, event._id, ["B3"])).status, 400, "seat #13 does not exist on a 12-seat map");
+  assert.equal((await order(u.token, event._id, ["B2"])).status, 201);
+  const fresh = await ctx.Event.findById(event._id);
+  assert.equal(fresh.availableSeats, 11);
+});
+
+test("events that already happened cannot be booked", async () => {
+  const org = await makeUser(ctx.User, "organizer");
+  const past = await makeEvent(ctx.Event, org.user._id, { date: new Date(Date.now() - 3600e3) });
+  const u = await makeUser(ctx.User);
+  const res = await order(u.token, past._id, ["A1"]);
+  assert.equal(res.status, 400);
+  assert.match(res.body.message, /already taken place/i);
+});
+
+test("an organizer cannot list the attendees of someone else's event", async () => {
+  const owner = await makeUser(ctx.User, "organizer");
+  const stranger = await makeUser(ctx.User, "organizer");
+  const event = await makeEvent(ctx.Event, owner.user._id);
+  const path = `/api/v1/bookings/organizer/event-bookings/${event._id}`;
+  assert.equal((await request(ctx.app).get(path).set(auth(stranger.token))).status, 403);
+  assert.equal((await request(ctx.app).get(path).set(auth(owner.token))).status, 200);
+});

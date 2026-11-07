@@ -1,6 +1,7 @@
 import React from 'react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { SEATS_PER_ROW, rowLabel, seatIdAt } from '../lib/seatLayout';
 
 // Helper for tailwind classes
 function cn(...inputs) {
@@ -15,14 +16,12 @@ function SeatMap({
   onSeatToggle,
   maxSelectable = 10
 }) {
-  const columns = 10;
-  const rows = Math.min(Math.ceil(capacity / columns), 10);
-  
-  const getSeatId = (rowIndex, colIndex) => {
-    const rowLetter = String.fromCharCode(65 + rowIndex);
-    const colNumber = colIndex + 1;
-    return `${rowLetter}${colNumber}`;
-  };
+  const columns = SEATS_PER_ROW;
+  // Every seat is drawn (rows A..Z, AA, AB, ...). It used to stop at 10 rows, so seats 101+ of a
+  // bigger event could never be picked and the event could never sell out.
+  const rows = Math.ceil(capacity / columns);
+
+  const getSeatId = (rowIndex, colIndex) => seatIdAt(rowIndex * columns + colIndex);
 
   const handleSeatClick = (seatId, isAvailable) => {
     if (!isAvailable) return;
@@ -77,8 +76,8 @@ function SeatMap({
     }
     layout.push(
       <div key={`row-${r}`} className="flex items-center gap-1.5 sm:gap-2 justify-center">
-        <span className="w-5 text-center text-[10px] sm:text-xs font-bold text-slate-400 select-none">
-          {String.fromCharCode(65 + r)}
+        <span className="w-6 text-center text-[10px] sm:text-xs font-bold text-slate-400 select-none">
+          {rowLabel(r)}
         </span>
         <div className="flex items-center gap-1.5 sm:gap-2">
           {row.slice(0, 5)}
@@ -98,7 +97,7 @@ function SeatMap({
       </div>
 
       {/* Seats Container */}
-      <div className="w-full overflow-x-auto pb-2 scrollbar-thin">
+      <div className="w-full overflow-auto max-h-80 pb-2 scrollbar-thin">
         <div className="min-w-max mx-auto flex flex-col gap-1.5 sm:gap-2 px-2 items-center">
           {layout}
         </div>

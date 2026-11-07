@@ -25,6 +25,7 @@ async function atomicDecrementSeats(eventId, seatsArray) {
     {
       _id: eventId,
       bookedSeats: { $nin: seatsArray }, // Guard: only proceed if NO seats overlap
+      availableSeats: { $gte: seatsArray.length }, // Guard: never sell past capacity
     },
     {
       $push: { bookedSeats: { $each: seatsArray } },
@@ -35,9 +36,12 @@ async function atomicDecrementSeats(eventId, seatsArray) {
 
   if (!updatedEvent) {
     // Either event doesn't exist OR one of the seats was booked
-    const event = await Event.findById(eventId).select("title bookedSeats");
+    const event = await Event.findById(eventId).select("title bookedSeats availableSeats");
     if (!event) {
       throw new ApiError(404, "Event not found");
+    }
+    if ((event.availableSeats ?? 0) < seatsArray.length) {
+      throw new ApiError(409, `Only ${Math.max(0, event.availableSeats ?? 0)} seat(s) left for "${event.title}".`);
     }
     throw new ApiError(
       409, // 409 Conflict — appropriate for concurrency failures

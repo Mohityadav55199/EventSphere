@@ -29,7 +29,7 @@ test("50 users racing for the same seat: exactly one wins, the rest get 409", as
 
 test("overlapping multi-seat bookings never double-sell a seat", async () => {
   const organizer = await makeUser(ctx.User, "organizer");
-  const seatIds = Array.from({ length: 10 }, (_, i) => `S${i + 1}`);
+  const seatIds = Array.from({ length: 10 }, (_, i) => `A${i + 1}`); // row A of the seat map
   const event = await makeEvent(ctx.Event, organizer.user._id, { capacity: 10 });
   const users = await Promise.all(Array.from({ length: 40 }, () => makeUser(ctx.User)));
 
@@ -55,7 +55,7 @@ test("double-clicking cancel refunds the seat exactly once", async () => {
   const organizer = await makeUser(ctx.User, "organizer");
   const event = await makeEvent(ctx.Event, organizer.user._id);
   const buyer = await makeUser(ctx.User);
-  const created = await book(buyer.token, event._id, ["B1", "B2"]);
+  const created = await book(buyer.token, event._id, ["A1", "A2"]);
   assert.equal(created.status, 201);
   const bookingId = created.body.data.booking._id;
 

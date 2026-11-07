@@ -21,14 +21,14 @@ test("organizer overview aggregates only their own confirmed bookings", async ()
   const b = await makeUser(ctx.User);
   assert.equal((await buy(a.token, free._id, ["A1"])).status, 201);
 
-  const order = await buy(b.token, mine._id, ["B1", "B2"]);
+  const order = await buy(b.token, mine._id, ["A1", "A2"]);
   await request(ctx.app).post("/api/v1/bookings/verify-payment").set(auth(b.token))
     .send({ bookingId: order.body.data.bookingId, stripe_session_id: order.body.data.stripeSessionId });
   // someone else's event, and an unpaid hold: neither may appear in this organizer's numbers
-  const foreign = await buy(a.token, theirs._id, ["C1"]);
+  const foreign = await buy(a.token, theirs._id, ["A1"]);
   await request(ctx.app).post("/api/v1/bookings/verify-payment").set(auth(a.token))
     .send({ bookingId: foreign.body.data.bookingId, stripe_session_id: foreign.body.data.stripeSessionId });
-  await buy(a.token, mine._id, ["B5"]); // left unpaid (status: hold)
+  await buy(a.token, mine._id, ["A5"]); // left unpaid (status: hold)
 
   const res = await request(ctx.app).get("/api/v1/events/analytics/overview?days=7").set(auth(org.token));
   assert.equal(res.status, 200);

@@ -188,4 +188,25 @@ const connectDB = async () => {
   }, 15000);
 };
 
+/**
+ * Connect once to the configured database, with the same SRV/DNS workaround as the server,
+ * but WITHOUT the localhost fallback and without retry timers. Used by one-off scripts, which
+ * must fail loudly rather than silently run against a different database.
+ */
+export async function connectForScript() {
+  const uri = sanitizeMongoUri(process.env.MONGODB_URI || process.env.MONGO_URI || "");
+  if (!uri) throw new Error("MONGODB_URI is not set in backend/.env");
+  try {
+    return await mongoose.connect(uri, { dbName: DB_NAME, serverSelectionTimeoutMS: 10000 });
+  } catch (error) {
+    if (!uri.startsWith("mongodb+srv://") || !/querySrv|ECONNREFUSED/.test(error.message)) throw error;
+    const host = uri.match(/mongodb\+srv:\/\/[^@]+@([^/?]+)/)?.[1];
+    const shards = host ? resolveSrvViaNslookup(host) : [];
+    const directUri = shards.length ? buildReplicaSetUri(uri, shards) : null;
+    if (!directUri) throw error;
+    console.log("SRV lookup blocked on this network; connecting to the replica set directly...");
+    return mongoose.connect(directUri, { dbName: DB_NAME, serverSelectionTimeoutMS: 10000 });
+  }
+}
+
 export default connectDB;

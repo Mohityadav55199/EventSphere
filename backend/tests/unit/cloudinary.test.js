@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { publicIdFromUrl } from "../../utils/cloudinary.js";
 import { createEventSchema, updateEventSchema } from "../../validators/schemas.js";
+import { seatIdAt, seatIndexOf, isSeatOnMap } from "../../utils/seatLayout.js";
 
 test("Cloudinary public_id is extracted from every URL shape we store", () => {
   const base = "https://res.cloudinary.com/demo/image/upload";
@@ -34,4 +35,13 @@ test("event update only accepts known fields (no activeStatus / organizer / seat
   assert.equal(updateEventSchema.safeParse({ title: "New title" }).success, true);
   assert.equal(updateEventSchema.safeParse({ activeStatus: "cancelled" }).success, false);
   assert.equal(updateEventSchema.safeParse({ bookedSeats: [] }).success, false);
+});
+
+
+test("seat ids map 1:1 to seat numbers, matching the frontend seat map", () => {
+  assert.deepEqual([0, 9, 10, 259, 260].map(seatIdAt), ["A1", "A10", "B1", "Z10", "AA1"]);
+  for (let i = 0; i < 2000; i++) assert.equal(seatIndexOf(seatIdAt(i)), i);
+  for (const bad of ["A0", "A11", "a1", "Z99", "VIP-1", "", "1A"]) assert.equal(seatIndexOf(bad), -1, bad);
+  assert.equal(isSeatOnMap("Y10", 250), true);
+  assert.equal(isSeatOnMap("Z1", 250), false);
 });

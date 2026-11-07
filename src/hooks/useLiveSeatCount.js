@@ -87,6 +87,10 @@ function useLiveSeatCount(eventId) {
 
     socket.on("connect", () => {
       isSocketConnected.current = true;
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current); // live updates are back, stop the HTTP fallback
+        pollTimerRef.current = null;
+      }
       // Subscribe to live seat updates for this event
       socket.emit("watchSeats", { eventId });
     });
@@ -112,9 +116,12 @@ function useLiveSeatCount(eventId) {
 
     socket.on("connect_error", () => {
       isSocketConnected.current = false;
-      // Start HTTP fallback polling
-      pollSeatAvailability();
-      pollTimerRef.current = setInterval(pollSeatAvailability, POLL_INTERVAL_MS);
+      // Start HTTP fallback polling once. connect_error fires on every reconnect attempt, and
+      // starting a new interval each time leaked timers that kept polling after leaving the page.
+      if (!pollTimerRef.current) {
+        pollSeatAvailability();
+        pollTimerRef.current = setInterval(pollSeatAvailability, POLL_INTERVAL_MS);
+      }
     });
 
     socket.on("disconnect", () => {
@@ -130,6 +137,7 @@ function useLiveSeatCount(eventId) {
       socketRef.current = null;
       isSocketConnected.current = false;
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
     };
   }, [eventId, pollSeatAvailability]);
 

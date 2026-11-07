@@ -47,6 +47,7 @@ import { emitSeatUpdate } from "../utils/seatBroadcast.js";
 import { getQrSecret } from "../utils/qrSecret.js";
 import { isSandboxAllowed, isSimulatedId } from "../utils/paymentMode.js";
 import { refundBooking } from "../utils/refund.js";
+import { isSeatOnMap } from "../utils/seatLayout.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_dummy_stripe_secret_key_12345");
 
@@ -182,6 +183,14 @@ const createOrder = asyncHandler(async (req, res) => {
   if (!event) throw new ApiError(404, "Event not found");
   if (event.activeStatus !== "active") {
     throw new ApiError(400, `This event is ${event.activeStatus}. Bookings are not accepted.`);
+  }
+  if (event.date && new Date(event.date) < new Date()) {
+    throw new ApiError(400, "This event has already taken place. Bookings are closed.");
+  }
+  // Only seats that exist on the event's seat map: invented ids would let sales exceed capacity
+  const offMap = selectedSeats.filter((s) => !isSeatOnMap(s, event.capacity));
+  if (offMap.length) {
+    throw new ApiError(400, `Seat ${offMap[0]} does not exist for this event`);
   }
 
   // ── LAYER 1: Redis seat hold ────────────────────────────────────────────────
@@ -593,6 +602,11 @@ const getAllBookings = asyncHandler(async (req, res) => {
 const getEventBookings = asyncHandler(async (req, res) => {
   const event = await Event.findById(req.params.eventId);
   if (!event) throw new ApiError(404, "Event not found");
+
+  // Attendee names and emails are personal data: organizers only see their own events
+  if (req.user.role !== "admin" && event.organizer.toString() !== req.user._id.toString()) {
+    throw new ApiError(403, "You can only view bookings for your own events");
+  }
 
   const bookings = await Booking.find({ event: req.params.eventId })
     .populate("user", "name email")
