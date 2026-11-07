@@ -82,26 +82,26 @@ const Register = () => {
 
   return (
     <div className="w-full">
-      <ToastContainer autoClose={3000} position="top-right" theme="dark" />
+      <ToastContainer autoClose={3000} position="top-right" theme="colored" />
 
-      <div className="bg-slate-900/80 backdrop-blur-2xl p-7 sm:p-9 rounded-3xl shadow-2xl border border-slate-800 text-white transition-all">
+      <div className="bg-white dark:bg-slate-900 p-7 sm:p-9 rounded-3xl shadow-xl shadow-slate-200/70 dark:shadow-none border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white transition-all">
         {/* Brand Header */}
         <div className="text-center mb-7">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/20 text-indigo-700 dark:text-indigo-400 text-xs font-semibold mb-3">
             <Sparkles className="w-3.5 h-3.5" />
             <span>Join the Community</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+          <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Create Your Account
           </h2>
-          <p className="text-slate-400 text-xs sm:text-sm mt-1.5">
+          <p className="text-slate-500 dark:text-slate-400 text-xs sm:text-sm mt-1.5">
             Discover live experiences or start hosting your own events
           </p>
         </div>
 
         {serverStatus === "unreachable" && (
-          <div role="status" className="mb-4 p-3 rounded-xl bg-amber-950/50 border border-amber-500/30 text-amber-200 text-xs flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-amber-400 shrink-0" />
+          <div role="status" className="mb-4 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-amber-600 dark:text-amber-400 shrink-0" />
             <span>Waking up the server. This can take up to a minute on the free tier.</span>
           </div>
         )}
@@ -109,36 +109,36 @@ const Register = () => {
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
           {/* Full Name */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
               Full Name
             </label>
             <div className="relative">
-              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
               <input
                 type="text"
                 {...register("name", {
                   required: "Full name is required",
                   minLength: { value: 2, message: "Name must be at least 2 characters" }
                 })}
-                className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/70 border ${
-                  errors.name ? "border-rose-500/80 focus:ring-rose-500/20" : "border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20"
-                } text-white placeholder-slate-500 text-sm rounded-xl focus:outline-none focus:ring-2 transition duration-150`}
+                className={`w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800/70 border ${
+                  errors.name ? "border-rose-400 dark:border-rose-500/80 focus:ring-rose-500/20" : "border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20"
+                } text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm rounded-xl focus:outline-none focus:ring-2 transition duration-150`}
                 placeholder="John Doe"
                 autoComplete="name"
               />
             </div>
             {errors.name && (
-              <p className="text-rose-400 text-xs mt-1.5 font-medium">{errors.name.message}</p>
+              <p className="text-rose-600 dark:text-rose-400 text-xs mt-1.5 font-medium">{errors.name.message}</p>
             )}
           </div>
 
           {/* Email */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
               Email Address
             </label>
             <div className="relative">
-              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
               <input
                 type="email"
                 {...register("email", {
@@ -148,48 +148,48 @@ const Register = () => {
                     message: "Please enter a valid email address",
                   },
                 })}
-                className={`w-full pl-10 pr-4 py-2.5 bg-slate-800/70 border ${
-                  errors.email ? "border-rose-500/80 focus:ring-rose-500/20" : "border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20"
-                } text-white placeholder-slate-500 text-sm rounded-xl focus:outline-none focus:ring-2 transition duration-150`}
+                className={`w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800/70 border ${
+                  errors.email ? "border-rose-400 dark:border-rose-500/80 focus:ring-rose-500/20" : "border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20"
+                } text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm rounded-xl focus:outline-none focus:ring-2 transition duration-150`}
                 placeholder="you@example.com"
                 autoComplete="email"
               />
             </div>
             {errors.email && (
-              <p className="text-rose-400 text-xs mt-1.5 font-medium">{errors.email.message}</p>
+              <p className="text-rose-600 dark:text-rose-400 text-xs mt-1.5 font-medium">{errors.email.message}</p>
             )}
           </div>
 
           {/* Password */}
           <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 uppercase tracking-wider">
               Create Password
             </label>
             <div className="relative">
-              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500 pointer-events-none" />
               <input
                 type={showPassword ? "text" : "password"}
                 {...register("password", {
                   required: "Password is required",
                   minLength: { value: 6, message: "Password must be at least 6 characters" }
                 })}
-                className={`w-full pl-10 pr-11 py-2.5 bg-slate-800/70 border ${
-                  errors.password ? "border-rose-500/80 focus:ring-rose-500/20" : "border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20"
-                } text-white placeholder-slate-500 text-sm rounded-xl focus:outline-none focus:ring-2 transition duration-150`}
+                className={`w-full pl-10 pr-11 py-2.5 bg-white dark:bg-slate-800/70 border ${
+                  errors.password ? "border-rose-400 dark:border-rose-500/80 focus:ring-rose-500/20" : "border-slate-300 dark:border-slate-700 focus:border-indigo-500 focus:ring-indigo-500/20"
+                } text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 text-sm rounded-xl focus:outline-none focus:ring-2 transition duration-150`}
                 placeholder="At least 6 characters"
                 autoComplete="new-password"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors p-0.5"
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors p-0.5"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             {errors.password && (
-              <p className="text-rose-400 text-xs mt-1.5 font-medium">{errors.password.message}</p>
+              <p className="text-rose-600 dark:text-rose-400 text-xs mt-1.5 font-medium">{errors.password.message}</p>
             )}
           </div>
 
@@ -206,12 +206,12 @@ const Register = () => {
                 onClick={() => setValue("role", "attendee")}
                 className={`p-3 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                   selectedRole === "attendee"
-                    ? "bg-indigo-950/50 border-indigo-500 shadow-md shadow-indigo-900/30 ring-1 ring-indigo-500"
-                    : "bg-slate-800/40 border-slate-700/80 hover:bg-slate-800/70 hover:border-slate-600"
+                    ? "bg-indigo-50 dark:bg-indigo-950/50 border-indigo-500 ring-1 ring-indigo-500"
+                    : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-600"
                 }`}
               >
                 <div className="flex items-center justify-between w-full mb-2">
-                  <div className={`p-2 rounded-xl ${selectedRole === "attendee" ? "bg-indigo-600 text-white" : "bg-slate-700 text-slate-400"}`}>
+                  <div className={`p-2 rounded-xl ${selectedRole === "attendee" ? "bg-indigo-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400"}`}>
                     <Ticket className="w-4 h-4" />
                   </div>
                   {selectedRole === "attendee" && (
@@ -219,7 +219,7 @@ const Register = () => {
                   )}
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-white">Event Explorer</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">Event Explorer</div>
                   <div className="text-[11px] text-slate-400 mt-0.5">Explore & book tickets</div>
                 </div>
               </button>
@@ -230,12 +230,12 @@ const Register = () => {
                 onClick={() => setValue("role", "organizer")}
                 className={`p-3 rounded-2xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${
                   selectedRole === "organizer"
-                    ? "bg-indigo-950/50 border-indigo-500 shadow-md shadow-indigo-900/30 ring-1 ring-indigo-500"
-                    : "bg-slate-800/40 border-slate-700/80 hover:bg-slate-800/70 hover:border-slate-600"
+                    ? "bg-indigo-50 dark:bg-indigo-950/50 border-indigo-500 ring-1 ring-indigo-500"
+                    : "bg-white dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/80 hover:bg-slate-50 dark:hover:bg-slate-800/70 hover:border-slate-300 dark:hover:border-slate-600"
                 }`}
               >
                 <div className="flex items-center justify-between w-full mb-2">
-                  <div className={`p-2 rounded-xl ${selectedRole === "organizer" ? "bg-indigo-600 text-white" : "bg-slate-700 text-slate-400"}`}>
+                  <div className={`p-2 rounded-xl ${selectedRole === "organizer" ? "bg-indigo-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400"}`}>
                     <Megaphone className="w-4 h-4" />
                   </div>
                   {selectedRole === "organizer" && (
@@ -243,13 +243,13 @@ const Register = () => {
                   )}
                 </div>
                 <div>
-                  <div className="text-sm font-bold text-white">Event Organizer</div>
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">Event Organizer</div>
                   <div className="text-[11px] text-slate-400 mt-0.5">Create & host events</div>
                 </div>
               </button>
             </div>
             {errors.role && (
-              <p className="text-rose-400 text-xs mt-1.5 font-medium">{errors.role.message}</p>
+              <p className="text-rose-600 dark:text-rose-400 text-xs mt-1.5 font-medium">{errors.role.message}</p>
             )}
           </div>
 
@@ -257,7 +257,7 @@ const Register = () => {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full mt-2 bg-gradient-to-r from-indigo-600 via-indigo-500 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white py-3 px-4 rounded-xl font-semibold text-sm shadow-lg shadow-indigo-600/30 hover:shadow-indigo-600/40 transition duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer transform active:scale-[0.99]"
+            className="w-full mt-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-xl font-semibold text-sm shadow-md shadow-indigo-200 dark:shadow-none transition duration-200 flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer transform active:scale-[0.99]"
           >
             {isSubmitting ? (
               <>
@@ -274,24 +274,24 @@ const Register = () => {
 
           {/* Waking Server Feedback */}
           {isWakingServer && (
-            <div role="status" className="p-3 rounded-xl bg-indigo-950/70 border border-indigo-500/30 text-indigo-200 text-xs flex items-center justify-center gap-2 animate-pulse">
-              <CloudLightning className="w-4 h-4 text-amber-400 shrink-0" />
+            <div role="status" className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/70 border border-indigo-100 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-200 text-xs flex items-center justify-center gap-2 animate-pulse">
+              <CloudLightning className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
               <span>Connecting to cloud server... (Render free tier spin-up in progress)</span>
             </div>
           )}
 
           {/* Security Badge */}
           <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500 pt-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
             <span>Encrypted credentials & secure JWT sessions</span>
           </div>
 
           {/* Login Redirect */}
-          <div className="pt-3 border-t border-slate-800 text-center text-xs text-slate-400">
+          <div className="pt-3 border-t border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
             Already have an account?{" "}
             <Link
               to="/login"
-              className="text-indigo-400 hover:text-indigo-300 font-semibold hover:underline transition-colors"
+              className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-semibold hover:underline transition-colors"
             >
               Sign In
             </Link>
