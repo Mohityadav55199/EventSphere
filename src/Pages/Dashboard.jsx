@@ -1,16 +1,18 @@
 import React, { lazy, Suspense, useEffect, useState } from "react";
-import { getEventAnalytics, updateEvent, getMyEvents, cancelEvent } from "../services/eventservices/eventapi";
+import { getOrganizerOverview, updateEvent, getMyEvents, cancelEvent } from "../services/eventservices/eventapi";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { Calendar, Trash2, Edit, Users, Ticket, IndianRupee, TrendingUp, Award, Camera } from "lucide-react";
 import { IconChartBar } from "@tabler/icons-react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import UpdateEventModal from "../Components/UpdateEventForm";
 const QRScannerModal = lazy(() => import("../Components/QRScannerModal"));
 
 function Dashboard() {
   const [events, setEvents] = useState([]);
   const [analytics, setAnalytics] = useState({});
+  const [overview, setOverview] = useState(null);
+  const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -21,15 +23,6 @@ function Dashboard() {
       try {
         const res = await getMyEvents();
         setEvents(res.data || []);
-
-        for (let ev of (res.data || [])) {
-          try {
-            const a = await getEventAnalytics(ev._id);
-            setAnalytics((prev) => ({ ...prev, [ev._id]: a.data }));
-          } catch {
-            console.log("Analytics fetch error for event", ev._id);
-          }
-        }
       } catch {
         toast.error("Failed to load organizer dashboard events");
       } finally {
@@ -38,6 +31,23 @@ function Dashboard() {
     };
     fetchEvents();
   }, []);
+
+  // Totals, revenue-per-day, per-tier and per-event numbers come from ONE aggregation request
+  useEffect(() => {
+    let cancelled = false;
+    getOrganizerOverview(days)
+      .then((res) => {
+        if (cancelled) return;
+        setOverview(res.data);
+        const perEvent = {};
+        for (const e of res.data.byEvent) {
+          perEvent[e.eventId] = { totalBookings: e.bookings, totalSeats: e.seats, totalRevenue: e.revenue };
+        }
+        setAnalytics(perEvent);
+      })
+      .catch(() => !cancelled && toast.error("Failed to load analytics"));
+    return () => { cancelled = true; };
+  }, [days]);
 
   const handleDelete = async (id) => {
     try {
@@ -59,9 +69,10 @@ function Dashboard() {
     }
   };
 
-  const totalBookings = Object.values(analytics).reduce((acc, a) => acc + (a?.totalBookings || 0), 0);
-  const totalSeats = Object.values(analytics).reduce((acc, a) => acc + (a?.totalSeats || 0), 0);
-  const totalRevenue = Object.values(analytics).reduce((acc, a) => acc + (a?.totalRevenue || 0), 0);
+  const totalBookings = overview?.totals.bookings || 0;
+  const totalSeats = overview?.totals.seats || 0;
+  const totalRevenue = overview?.totals.revenue || 0;
+  const shortDate = (iso) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
   if (loading) {
     return (
@@ -87,7 +98,7 @@ function Dashboard() {
           </div>
           <button
             onClick={() => setIsScannerOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-bold text-xs shadow-md shadow-indigo-600/25 transition cursor-pointer"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-md shadow-indigo-600/25 transition cursor-pointer"
           >
             <Camera className="w-4 h-4" />
             <span>Scan Attendee Tickets (Live QR Check-In)</span>
@@ -136,6 +147,77 @@ function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* Revenue over time + ticket tiers + best events (single aggregation request) */}
+        {overview && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-200 shadow-md">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="font-extrabold text-slate-900 flex items-center gap-2"><TrendingUp size={18} className="text-indigo-600" /> Revenue over time</h2>
+                  <p className="text-xs text-slate-500">Confirmed bookings, last {overview.days} days</p>
+                </div>
+                <div className="flex gap-1 p-1 bg-slate-100 rounded-xl text-xs font-bold">
+                  {[7, 30, 90].map((d) => (
+                    <button key={d} onClick={() => setDays(d)}
+                      className={`px-3 py-1 rounded-lg transition ${days === d ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                      {d}d
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={overview.revenueByDay}>
+                    <defs>
+                      <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                    <XAxis dataKey="date" tickFormatter={shortDate} stroke="#94a3b8" fontSize={10} minTickGap={24} />
+                    <YAxis stroke="#94a3b8" fontSize={10} width={44} />
+                    <Tooltip labelFormatter={shortDate} formatter={(v) => [`₹${v}`, "Revenue"]} />
+                    <Area type="monotone" dataKey="revenue" stroke="#4f46e5" strokeWidth={2} fill="url(#rev)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-md space-y-6">
+              <div>
+                <h2 className="font-extrabold text-slate-900 mb-3 flex items-center gap-2"><Ticket size={18} className="text-indigo-600" /> Revenue by ticket tier</h2>
+                {overview.byTier.length === 0 ? (
+                  <p className="text-xs text-slate-400">No sales yet.</p>
+                ) : (
+                  <div className="h-36">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={overview.byTier} layout="vertical" margin={{ left: 8 }}>
+                        <XAxis type="number" hide />
+                        <YAxis type="category" dataKey="tier" stroke="#94a3b8" fontSize={10} width={80} />
+                        <Tooltip formatter={(v) => [`₹${v}`, "Revenue"]} />
+                        <Bar dataKey="revenue" fill="#6366f1" radius={[0, 6, 6, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </div>
+              <div>
+                <h2 className="font-extrabold text-slate-900 mb-2 flex items-center gap-2"><Award size={18} className="text-amber-500" /> Top events</h2>
+                <ol className="space-y-2">
+                  {overview.byEvent.slice(0, 3).map((e, i) => (
+                    <li key={e.eventId} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="truncate text-slate-700"><span className="text-slate-400 mr-1.5">{i + 1}.</span>{e.title}</span>
+                      <span className="font-bold text-indigo-600 shrink-0">₹{e.revenue}</span>
+                    </li>
+                  ))}
+                  {overview.byEvent.length === 0 && <li className="text-xs text-slate-400">No sales yet.</li>}
+                </ol>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Event Cards & Analytics */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

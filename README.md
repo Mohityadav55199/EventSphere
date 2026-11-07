@@ -62,15 +62,30 @@ EventSphere is an enterprise-grade full-stack event discovery, reservation, and 
 - **Cryptographic Offline Verification**: Each ticket embeds an HMAC-SHA256 signature generated over `bookingId:secret`. Event organizers can scan tickets offline via the in-app QR scanner to verify validity instantly.
 - **Calendar & Pass Integration**: 1-click Google Calendar event sync and instant PDF download directly from the user profile.
 
-### 4. 🎨 Organizer Studio & Modern Glassmorphic UI
+### 4. 📊 Organizer Analytics (single aggregation query)
+- `GET /api/v1/events/analytics/overview?days=30` returns totals, **revenue per day** (gaps zero-filled for the chart), revenue by ticket tier and per-event numbers from **one MongoDB `$facet` aggregation**. The dashboard used to send one request per event.
+- Only the organizer's own events are counted (admins see all), and per-event analytics are now restricted to the event's organizer.
+
+### 5. 🎨 Organizer Studio & Modern Glassmorphic UI
 - **Redesigned Event Creator**: Modern, responsive form with sections for General Details, Date & Location (with Google Maps venue link validation), Ticketing & Capacity, and drag-and-drop poster upload with live thumbnail preview.
 - **Independent Search Architecture**: Header navigation search and lower event filter inputs operate with isolated state, preventing race conditions or premature "No matching events" popups.
 - **Universal Dark & Light Themes**: Cohesive HSL/Tailwind tokens with smooth theme switching and persistent preferences.
 
-### 5. 🔍 Database Performance & Security Hardening
+### 6. 🔍 Database Performance & Security Hardening
 - **MongoDB Compound & Text Indexes**:
-  - `Booking`: `{ user: 1, createdAt: -1 }`, `{ status: 1, holdExpiresAt: 1 }`, and `{ event: 1, status: 1 }`.
+  - `Booking`: `{ user: 1, createdAt: -1 }`, `{ status: 1, holdExpiresAt: 1 }`, `{ event: 1, status: 1, createdAt: -1 }`, and a **unique partial index** `{ event: 1, selectedSeats: 1 }` (only where `status: "confirmed"`) so the database itself refuses to sell one seat twice, even if application code were bypassed.
   - `Event`: `{ activeStatus: 1, date: 1 }`, `{ organizer: 1 }`, and full-text index on `{ title: "text", description: "text", location: "text" }`.
+- **Measured, not guessed**: `npm run explain` seeds 30k events and 150k bookings and compares each hot query with and without its index (`explain("executionStats")`). Typical local result:
+
+  | Query | Docs scanned (no index → index) | Time (no index → index) |
+  |---|---|---|
+  | Public events list, page of 20 | 30,000 → 20 | ~100-200 ms → ~10 ms |
+  | Full-text search, specific term | 30,000 → 1 | ~170 ms → ~9 ms |
+  | My bookings, newest first | 150,000 → ~70 | ~300 ms → ~4 ms |
+  | Organizer dashboard bookings | 150,000 → ~600 | ~330 ms → ~30 ms |
+
+  *(In-memory MongoDB on a laptop; absolute times vary, the scanned-document counts are what matter.)*
+- **Non-blocking Redis access**: seat holds are looked up with cursor-based `SCAN` instead of `KEYS`, which would block Redis for every other client as the keyspace grows.
 - **JWT Authentication with Silent Refresh**: Short-lived access tokens paired with `httpOnly` refresh tokens and shared-promise Axios interceptors that prevent redundant refresh calls.
 - **Security Headers & Audit Trails**: Hardened with `helmet`, IP rate limiting on authentication and checkout endpoints, proxy trust (`app.set("trust proxy", 1)`), and failed login logging.
 
@@ -131,6 +146,7 @@ VITE_STRIPE_PUBLIC_KEY=pk_test_...
 cd backend
 npm test            # unit + integration
 npm run loadtest    # concurrency load test (see below)
+npm run explain     # index vs no-index query comparison
 ```
 
 | Suite | What it proves |
@@ -138,6 +154,8 @@ npm run loadtest    # concurrency load test (see below)
 | `concurrency.test.js` | 50 users racing for one seat: exactly 1 succeeds, 49 get 409. 40 users picking overlapping seats never double-sell. Triple-click cancel restores seats once. |
 | `payments.test.js` | Forged payment IDs are rejected; client-sent price/discount is ignored; users cannot confirm each other's bookings; simulated payments are refused in production; coupons never drain the wallet; webhook signature, idempotency, amount-mismatch and expiry handling. |
 | `checkin.test.js` | Only the event's organizer can scan; tampered, cancelled or repeated tickets are rejected with correct status codes. |
+| `analytics.test.js` | Organizer overview counts only own confirmed bookings; other organizers get 403; the unique partial index rejects a second confirmed booking for the same seat. |
+| `ratelimit.test.js` | Booking rate limit is per user, not per IP. |
 | `tests/unit/*` | Validation schemas, auth middleware, QR signing, refund isolation, env/CORS/secret rules. |
 
 ### Concurrency load test

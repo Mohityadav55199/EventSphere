@@ -110,3 +110,13 @@ export const getAllEventsByAdmin = async () => {
     throw error.response ? error.response.data : error;
   }
 }
+
+// One request for the whole organizer dashboard (totals, revenue per day, per tier, per event)
+export const getOrganizerOverview = async (days = 30) => {
+  try {
+    const response = await API.get(`/api/v1/events/analytics/overview`, { params: { days } });
+    return response.data;
+  } catch (error) {
+    throw error.response ? error.response.data : error;
+  }
+}
