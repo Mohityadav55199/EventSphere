@@ -104,6 +104,14 @@ const bookingSchema = new Schema({
 bookingSchema.index({ user: 1, createdAt: -1 });
 bookingSchema.index({ status: 1, holdExpiresAt: 1 });
 bookingSchema.index({ event: 1, status: 1 });
+// Organizer dashboard: confirmed bookings of an event over time
+bookingSchema.index({ event: 1, status: 1, createdAt: -1 });
+// Last line of defence against double-selling: two CONFIRMED bookings can never share a seat of the
+// same event, even if the application-level atomic update were bypassed (a multikey unique index).
+bookingSchema.index(
+    { event: 1, selectedSeats: 1 },
+    { unique: true, partialFilterExpression: { status: "confirmed" }, name: "uniq_confirmed_seat_per_event" }
+);
 
 const Booking = mongoose.model("Booking", bookingSchema);
 export default Booking;

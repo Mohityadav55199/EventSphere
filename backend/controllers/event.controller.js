@@ -193,6 +193,10 @@ const getEventAnalytics = asyncHandler(async (req, res) => {
 
   const event = await Event.findById(eventId);
   if (!event) throw new ApiError(404, "Event not found");
+  // Revenue figures are private: only the event's organizer (or an admin) may read them
+  if (req.user.role !== "admin" && event.organizer.toString() !== req.user._id.toString()) {
+    throw new ApiError(403, "You can only view analytics for your own events");
+  }
 
   const analytics = await Booking.aggregate([
     { $match: { event: event._id, paymentstatus: "confirmed" } },
@@ -207,6 +211,61 @@ const getEventAnalytics = asyncHandler(async (req, res) => {
   ]);
 
   res.status(200).json(new ApiResponse(200, analytics[0] || {}, "Event analytics fetched successfully"));
+});
+
+
+// One round trip for the whole organizer dashboard (replaces N per-event requests).
+// GET /events/analytics/overview?days=30
+const getOrganizerOverview = asyncHandler(async (req, res) => {
+  const days = Math.min(90, Math.max(7, parseInt(req.query.days, 10) || 30));
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+  const ownEvents = await Event.find(req.user.role === "admin" ? {} : { organizer: req.user._id })
+    .select("_id title")
+    .lean();
+  const titles = new Map(ownEvents.map((e) => [String(e._id), e.title]));
+  const eventIds = ownEvents.map((e) => e._id);
+
+  const [facets] = await Booking.aggregate([
+    { $match: { event: { $in: eventIds }, status: "confirmed" } },
+    {
+      $facet: {
+        totals: [{ $group: { _id: null, bookings: { $sum: 1 }, seats: { $sum: "$seatsBooked" }, revenue: { $sum: "$amountPaid" } } }],
+        // revenue per day inside the window; gaps are filled below so the chart has no holes
+        byDay: [
+          { $match: { createdAt: { $gte: since } } },
+          { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, revenue: { $sum: "$amountPaid" }, seats: { $sum: "$seatsBooked" } } },
+        ],
+        byTier: [
+          { $group: { _id: "$ticketTier", seats: { $sum: "$seatsBooked" }, revenue: { $sum: "$amountPaid" } } },
+          { $sort: { revenue: -1 } },
+        ],
+        byEvent: [
+          { $group: { _id: "$event", bookings: { $sum: 1 }, seats: { $sum: "$seatsBooked" }, revenue: { $sum: "$amountPaid" }, checkedIn: { $sum: { $cond: ["$checkedIn", 1, 0] } } } },
+          { $sort: { revenue: -1 } },
+        ],
+      },
+    },
+  ]);
+
+  const totals = facets?.totals?.[0] || { bookings: 0, seats: 0, revenue: 0 };
+  const dayMap = new Map((facets?.byDay || []).map((d) => [d._id, d]));
+  const revenueByDay = Array.from({ length: days }, (_, i) => {
+    const date = new Date(since.getTime() + (i + 1) * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const hit = dayMap.get(date);
+    return { date, revenue: hit?.revenue || 0, seats: hit?.seats || 0 };
+  });
+
+  res.status(200).json(new ApiResponse(200, {
+    days,
+    totals: { bookings: totals.bookings, seats: totals.seats, revenue: totals.revenue },
+    revenueByDay,
+    byTier: (facets?.byTier || []).map((t) => ({ tier: t._id || "Standard Pass", seats: t.seats, revenue: t.revenue })),
+    byEvent: (facets?.byEvent || []).map((e) => ({
+      eventId: String(e._id), title: titles.get(String(e._id)) || "Deleted event",
+      bookings: e.bookings, seats: e.seats, revenue: e.revenue, checkedIn: e.checkedIn,
+    })),
+  }, "Organizer overview fetched"));
 });
 
 const myEvents = asyncHandler(async (req, res) => { 
@@ -264,6 +323,7 @@ export {
     updateEvent,
     deleteEvent,
     getEventAnalytics,
+    getOrganizerOverview,
     myEvents,
     cancelEvent,
     getAllActiveEvents

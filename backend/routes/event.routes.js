@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getAllEvents, getEventbyId,createEvent,updateEvent,deleteEvent,getEventAnalytics,myEvents, cancelEvent, getAllActiveEvents } from "../controllers/event.controller.js";
+import { getAllEvents, getEventbyId,createEvent,updateEvent,deleteEvent,getEventAnalytics,getOrganizerOverview,myEvents, cancelEvent, getAllActiveEvents } from "../controllers/event.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/role.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
@@ -27,6 +27,13 @@ eventRouter.route('/update-event/:id').patch(
     authorizeRoles("organizer", "admin"),
     upload.single("image"), 
     updateEvent
+);
+
+// must be registered before '/analytics/:eventid' or "overview" would be read as an event id
+eventRouter.route('/analytics/overview').get(
+    authMiddleware,
+    authorizeRoles("organizer", "admin"),
+    getOrganizerOverview
 );
 
 eventRouter.route('/analytics/:eventid').get(
