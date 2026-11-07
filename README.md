@@ -6,7 +6,7 @@
 [![Production Ready](https://img.shields.io/badge/Status-Complete%20%26%20Production%20Ready-emerald.svg)](#)
 
 > **Live Application**: [https://event-sphere-lemon-nu.vercel.app](https://event-sphere-lemon-nu.vercel.app)  
-> **Production API Gateway**: [https://eventsphere-backend-zfcj.onrender.com](https://eventsphere-backend-zfcj.onrender.com)
+> **Production API Gateway**: [https://eventsphere-backend-nhzy.onrender.com](https://eventsphere-backend-nhzy.onrender.com)
 
 EventSphere is an enterprise-grade full-stack event discovery, reservation, and community ticketing system built to replicate high-concurrency architectures (such as BookMyShow and Eventbrite). It features a multi-tiered seat reservation lifecycle with Redis distributed holds, dual payment gateways (Stripe & Razorpay) with interactive sandbox simulator, failure-isolated batch refunds, vector-rendered HMAC cryptographic QR ticket passes, server-side full-text search with MongoDB compound indexes, and real-time attendee community chat via WebSockets.
 

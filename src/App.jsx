@@ -6,7 +6,6 @@ import Footer from "./Components/Footer/Footer";
 import { getUserProfile } from "./services/authservices/authapi";
 import { logout, setCredentials } from "./store/authslice";
 import ScrollToTop from "./ScrollToTop";
-import { baseURL } from "./config/baseURL.js";
 import useDocumentTitle from "./hooks/useDocumentTitle";
 
 const ROUTE_TITLES = {
@@ -30,11 +29,6 @@ function App() {
   // Event pages set their own title (see DetailEvent)
   const isEventPage = pathname.startsWith("/event");
   useDocumentTitle(isEventPage ? undefined : ROUTE_TITLES[pathname]);
-
-  useEffect(() => {
-    // Proactively warm up cloud backend on Render so requests don't hit cold start latency
-    fetch(`${baseURL}/health`).catch(() => {});
-  }, []);
 
   useEffect(() => {
     const token = accessToken || localStorage.getItem("accessToken");
