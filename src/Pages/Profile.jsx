@@ -204,7 +204,7 @@ function Profile() {
               <User className="text-amber-500 shrink-0" size={18} />
               <div>
                 <span className="text-slate-400 block text-[10px] uppercase">Role</span>
-                <span className="text-slate-800 font-bold">{user?.role === "attendee" ? "Event Explorer" : "Event Organizer"}</span>
+                <span className="text-slate-800 font-bold">{{ attendee: "Event Explorer", organizer: "Event Organizer", admin: "Administrator" }[user?.role] || "Member"}</span>
               </div>
             </div>
             <div className="p-4 bg-indigo-50/60 rounded-2xl border border-indigo-100 flex items-center gap-3">
