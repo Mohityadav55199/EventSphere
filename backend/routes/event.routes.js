@@ -4,7 +4,7 @@ import { authMiddleware } from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/role.middleware.js";
 import { upload } from "../middlewares/multer.middleware.js";
 import validate from "../middlewares/validate.middleware.js";
-import { createEventSchema } from "../validators/schemas.js";
+import { createEventSchema, updateEventSchema, idParam } from "../validators/schemas.js";
 
 const eventRouter = Router();
 
@@ -12,7 +12,7 @@ import { autoSeedEventsIfEmpty } from "../utils/autoSeed.js";
 
 // Public routes
 eventRouter.route('/all-events').get(getAllActiveEvents);
-eventRouter.route('/event/:id').get(getEventbyId);
+eventRouter.route('/event/:id').get(validate(idParam, "params"), getEventbyId);
 
 // oranizer routes
 eventRouter.route('/create-event').post(
@@ -25,7 +25,9 @@ eventRouter.route('/create-event').post(
 eventRouter.route('/update-event/:id').patch(
     authMiddleware,
     authorizeRoles("organizer", "admin"),
-    upload.single("image"), 
+    validate(idParam, "params"),
+    upload.single("image"),
+    validate(updateEventSchema),
     updateEvent
 );
 

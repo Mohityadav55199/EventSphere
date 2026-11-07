@@ -12,47 +12,39 @@ const EVENTS_CACHE_TTL_MS = 30 * 1000;
 let activeEventsCache = { data: null, expires: 0 };
 const invalidateEventsCache = () => { activeEventsCache = { data: null, expires: 0 }; };
 
-const UPDATABLE_EVENT_FIELDS = ["title", "description", "date", "location", "locationGoogleMapLink", "Price", "category", "capacity", "activeStatus"];
+// Fields an organizer may edit directly. NOT here on purpose:
+//  - activeStatus: cancelling must go through cancelEvent so every attendee is refunded
+//  - capacity: changed atomically below so it can never drop under seats already sold
+//  - organizer / availableSeats / bookedSeats / attendees: owned by the booking flow
+const UPDATABLE_EVENT_FIELDS = ["title", "description", "date", "location", "locationGoogleMapLink", "Price", "category", "ticketTypes"];
 
-const createEvent = asyncHandler(async(req,res)=>{
-    try {
-        const {title,description,date,location,Price,category,capacity,locationGoogleMapLink} = req.body;
-        if(![title,description,date,location,Price,category,capacity,locationGoogleMapLink].every(Boolean)){
-            throw new ApiError(400,"All Fields are Required");
-        }
-        const eventImagePath = req.file; //  file
-        if(!eventImagePath){
-            throw new ApiError(400,"Event Image is Required")
-        }
-    
-        const image = await uploadOnCloudinary(req.file.buffer);
-        if(!image){
-            throw new ApiError(500,"Failed to Upload Event Image");
-        }
-    const Eventdate = new Date(date); // ✅ parse date-time from request
-    
+// Body has already been validated and coerced by createEventSchema (see event.routes.js)
+const createEvent = asyncHandler(async (req, res) => {
+    if (!req.file?.buffer) {
+        throw new ApiError(400, "Event Image is Required");
+    }
+    const image = await uploadOnCloudinary(req.file.buffer);
+    if (!image) {
+        throw new ApiError(502, "Failed to Upload Event Image");
+    }
+
+    const { title, description, date, location, locationGoogleMapLink, Price, category, capacity, ticketTypes } = req.body;
     const newEvent = await Event.create({
         title,
         description,
-        date: Eventdate,
+        date,
         location,
         locationGoogleMapLink,
         Price,
         category,
         capacity,
+        ...(ticketTypes?.length ? { ticketTypes } : {}),
         image: image.secure_url,
         organizer: req.user._id,
-       
     });
-        invalidateEventsCache();
-        res.status(201).json(
-            new ApiResponse(201, newEvent, "Event created successfully")
-        )
-    } catch (error) {
-        if (error instanceof ApiError) throw error;
-        throw new ApiError(500, error.message || "Error creating event");
-    }
-})
+    invalidateEventsCache();
+    res.status(201).json(new ApiResponse(201, newEvent, "Event created successfully"));
+});
 
 const getEventStatus = (eventDate) => {
   const now = new Date();
@@ -143,35 +135,53 @@ const getEventbyId = asyncHandler(async(req,res)=>{
 
 // UPDATE EVENT(ONLY BY ORGANIZER)
 
-const updateEvent = asyncHandler(async(req,res)=>{
-  const event = await Event.findById(req.params.id);
-  if(!event) throw new ApiError(404,"Event Not Found");
-    if(event.organizer.toString() !== req.user._id.toString()){
-        throw new ApiError(403,"You are not authorized to update this event");
+const updateEvent = asyncHandler(async (req, res) => {
+    const event = await Event.findById(req.params.id);
+    if (!event) throw new ApiError(404, "Event Not Found");
+    if (event.organizer.toString() !== req.user._id.toString()) {
+        throw new ApiError(403, "You are not authorized to update this event");
     }
-    // Handle image upload if provided
-    if(req.file?.buffer) {
-        const eventImagePath = req.file.buffer;
-        const oldImageUrl = event.image; // Store old image URL for deletion if needed
-        if(oldImageUrl){
-            await deleteFromCloudinary(oldImageUrl); // Delete old image from Cloudinary
-        }
-        const image = await uploadOnCloudinary(eventImagePath);
-        if(!image){
-            throw new ApiError(500,"Failed to Upload Image");
-        }
-        event.image = image.secure_url; // Update the image URL
+    if (event.activeStatus === "cancelled") {
+        throw new ApiError(400, "Cancelled events can no longer be edited");
     }
-    // Whitelist: never let the request body overwrite organizer, availableSeats, bookedSeats, etc.
+
+    // Capacity: one atomic update, guarded so it can't go below seats already sold,
+    // and availableSeats is recomputed from the same document (no read-modify-write race with bookings)
+    if (req.body.capacity !== undefined && req.body.capacity !== event.capacity) {
+        const newCapacity = req.body.capacity;
+        const updated = await Event.findOneAndUpdate(
+            { _id: event._id, $expr: { $lte: [{ $size: "$bookedSeats" }, newCapacity] } },
+            [{ $set: { capacity: newCapacity, availableSeats: { $subtract: [newCapacity, { $size: "$bookedSeats" }] } } }],
+            { new: true }
+        );
+        if (!updated) {
+            throw new ApiError(400, `Capacity cannot be lower than the ${event.bookedSeats.length} seats already sold`);
+        }
+        event.capacity = updated.capacity;
+        event.availableSeats = updated.availableSeats;
+    }
+
+    // Upload the new image first; only delete the old one once the new one is safely stored
+    let oldImageToDelete = null;
+    if (req.file?.buffer) {
+        const image = await uploadOnCloudinary(req.file.buffer);
+        if (!image) throw new ApiError(502, "Failed to Upload Image");
+        oldImageToDelete = event.image;
+        event.image = image.secure_url;
+    }
+
     for (const field of UPDATABLE_EVENT_FIELDS) {
         if (req.body[field] !== undefined) event[field] = req.body[field];
     }
+    // capacity/availableSeats were already written atomically above; don't overwrite them with a stale copy
+    event.unmarkModified("capacity");
+    event.unmarkModified("availableSeats");
     await event.save();
+    if (oldImageToDelete) await deleteFromCloudinary(oldImageToDelete);
+
     invalidateEventsCache();
-    res.status(200).json(
-        new ApiResponse(200,event,"Event Updated Successfully")
-    )
-})
+    res.status(200).json(new ApiResponse(200, event, "Event Updated Successfully"));
+});
 
 // DELETE EVENT (ONLY BY Admin)
 const deleteEvent = asyncHandler(async(req,res)=>{

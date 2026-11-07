@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useForm } from "react-hook-form";
 import { createEvent } from "../services/eventservices/eventapi";
+import { EVENT_CATEGORIES } from "../lib/categories";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useNavigate, Link } from "react-router-dom";
@@ -21,21 +22,15 @@ import {
   Link as LinkIcon,
 } from "lucide-react";
 
-const CATEGORIES = [
-  "Music",
-  "Workshop",
-  "Tech",
-  "Sports",
-  "Conference",
-  "Movie",
-  "Arts & Culture",
-  "Food & Drinks",
-  "Other",
-];
+const CATEGORIES = EVENT_CATEGORIES;
 
 function AddEvent() {
   const [imagePreview, setImagePreview] = useState(null);
   const [selectedFileName, setSelectedFileName] = useState("");
+  // Optional ticket tiers (e.g. VIP / Standard). Empty = a single price for everyone.
+  const [tiers, setTiers] = useState([]);
+  const updateTier = (i, field, value) =>
+    setTiers((prev) => prev.map((t, idx) => (idx === i ? { ...t, [field]: value } : t)));
 
   const {
     register,
@@ -86,6 +81,20 @@ function AddEvent() {
           formData.append(key, data[key]);
         }
       }
+      const cleanTiers = tiers
+        .map((t) => ({ name: t.name.trim(), price: Number(t.price), description: t.description?.trim() || undefined }))
+        .filter((t) => t.name);
+      if (cleanTiers.some((t) => !Number.isFinite(t.price) || t.price < 0)) {
+        toast.error("Every ticket tier needs a price of 0 or more");
+        return;
+      }
+      if (new Set(cleanTiers.map((t) => t.name.toLowerCase())).size !== cleanTiers.length) {
+        toast.error("Ticket tier names must be unique");
+        return;
+      }
+      // Multipart forms only carry strings, so the tiers travel as JSON text (the API parses it)
+      if (cleanTiers.length) formData.append("ticketTypes", JSON.stringify(cleanTiers));
+
       if (data.image && data.image[0]) {
         formData.append("image", data.image[0]);
       } else {
@@ -97,6 +106,7 @@ function AddEvent() {
       await createEvent(formData);
       toast.success("Event created successfully! 🎉");
       reset();
+      setTiers([]);
       setImagePreview(null);
       setSelectedFileName("");
       navigate("/events");
@@ -372,6 +382,61 @@ function AddEvent() {
                   </p>
                 )}
               </div>
+            </div>
+
+            {/* Optional ticket tiers */}
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Ticket tiers <span className="font-normal text-slate-400">(optional)</span></p>
+                  <p className="text-[11px] text-slate-400">e.g. VIP and Standard. Leave empty to use the single price above.</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={tiers.length >= 5}
+                  onClick={() => setTiers((prev) => [...prev, { name: "", price: "", description: "" }])}
+                  className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  + Add tier
+                </button>
+              </div>
+              {tiers.map((tier, i) => (
+                <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_8rem_1.5fr_auto] gap-2 items-center">
+                  <input
+                    aria-label={`Tier ${i + 1} name`}
+                    placeholder="Name (e.g. VIP)"
+                    maxLength={40}
+                    value={tier.name}
+                    onChange={(e) => updateTier(i, "name", e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl p-2.5 text-sm outline-none focus:border-indigo-600"
+                  />
+                  <input
+                    aria-label={`Tier ${i + 1} price`}
+                    type="number"
+                    min="0"
+                    placeholder="Price ₹"
+                    value={tier.price}
+                    onChange={(e) => updateTier(i, "price", e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl p-2.5 text-sm outline-none focus:border-indigo-600"
+                  />
+                  <input
+                    aria-label={`Tier ${i + 1} description`}
+                    placeholder="What's included (optional)"
+                    maxLength={120}
+                    value={tier.description}
+                    onChange={(e) => updateTier(i, "description", e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white rounded-xl p-2.5 text-sm outline-none focus:border-indigo-600"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove tier ${i + 1}`}
+                    onClick={() => setTiers((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl transition justify-self-end"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
 

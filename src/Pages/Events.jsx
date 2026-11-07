@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { EVENT_CATEGORIES } from '../lib/categories';
 import { getAllEvents, getAllEventsByAdmin } from '../services/eventservices/eventapi';
 import { Link, useSearchParams } from 'react-router-dom';
 import { EventCard } from '../Components/Cards/EventCard';
@@ -20,16 +21,7 @@ import {
 
 const PAGE_SIZE = 9;
 
-const CATEGORIES = [
-  "All",
-  "Music",
-  "Workshop",
-  "Conference",
-  "Movie",
-  "Sports",
-  "Tech",
-  "Networking"
-];
+const CATEGORIES = ["All", ...EVENT_CATEGORIES];
 
 const DATE_OPTIONS = [
   { id: "any", label: "Any Date" },

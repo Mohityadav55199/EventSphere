@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { EVENT_CATEGORIES } from "../constant.js";
 
 const eventSchema = new Schema({
     title: {
@@ -63,10 +64,10 @@ const eventSchema = new Schema({
     ],
     category: {
         type: String,
-         enum : [ "Movie", "Music", "Workshop", "Sports", "Other"],
+         enum: EVENT_CATEGORIES,
         required: [true, "Category is required"],
         trim: true,
-        default: "other",
+        default: "Other",
     },
     capacity: {
         type: Number,
