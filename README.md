@@ -51,7 +51,9 @@ EventSphere is an enterprise-grade full-stack event discovery, reservation, and 
 
 ### 2. 💳 Multi-Gateway Checkout & Interactive Sandbox Simulator
 - **Dual Payment Gateways**: Native support for **Stripe** (Cards, Apple Pay, Google Pay) and **Razorpay** (UPI, PhonePe, GPay, NetBanking).
-- **Interactive Sandbox Demo Gateway**: When operating in demo/preview mode or when keys are unconfigured, EventSphere presents an interactive modal requiring explicit user confirmation before simulating payments.
+- **Interactive Sandbox Demo Gateway (development only)**: Outside production, unconfigured keys fall back to a simulated checkout. In production a missing or failing gateway fails the checkout and releases the seats, so a bad env var can never hand out free tickets.
+- **Server-Side Payment Verification**: Prices, coupons, wallet points and seats are computed and stored when the order is created. `verify-payment` only receives the booking ID plus gateway proof (Stripe session fetched from Stripe, Razorpay HMAC signature) and ignores any price or discount sent by the browser.
+- **Idempotent Stripe Webhooks**: `POST /api/v1/webhooks/stripe` verifies the signature over the raw body, claims each event ID in a unique-indexed collection (redeliveries are no-ops), and confirms tickets even if the user closes the tab. Late payments after a hold expires are refunded automatically.
 - **Dynamic Price Breakdown**: Real-time pricing engine that computes base price, promo code discounts (`-₹couponDiscount`), and wallet cashback points (`-₹pointsDiscount`), dynamically switching the action to `Confirm Free Reservation` when 100% covered.
 - **Failure-Isolated Batch Refunds**: Organizer event cancellations execute refunds per booking independently with structured error isolation. One user's banking failure never aborts remaining refunds.
 
@@ -101,6 +103,7 @@ CLIENT_URL=http://localhost:5173
 
 # Optional Integrations
 STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...   # endpoint: /api/v1/webhooks/stripe
 RAZORPAY_KEY_ID=rzp_test_...
 RAZORPAY_KEY_SECRET=...
 UPSTASH_REDIS_REST_URL=https://...upstash.io
@@ -122,35 +125,34 @@ VITE_STRIPE_PUBLIC_KEY=pk_test_...
 
 ## 🧪 Testing & Quality Verification
 
-EventSphere includes an automated unit test suite verifying security, token refresh, seat hold expiry, HMAC signing, and refund isolation:
+**41 automated tests** (20 unit + 21 integration). Integration tests run the real Express app against a real in-memory MongoDB (`mongodb-memory-server`) through HTTP (`supertest`), so they exercise routing, auth, validation, Mongo atomic updates and the Redis-fallback hold logic together. They run in CI on every push.
 
 ```bash
-# Run backend test suite
 cd backend
-npm test
+npm test            # unit + integration
+npm run loadtest    # concurrency load test (see below)
 ```
 
-### Test Suite Summary:
-```
-✔ missing token is 401
-✔ expired token is 401 so the client refreshes instead of seeing 403
-✔ tampered token is 401
-✔ valid token attaches the user
-✔ HMAC ticket QR code generation and verification
-✔ seat hold expiry condition identifies abandoned checkouts
-✔ booking pricing accurately calculates seat count and tiered pricing
-✔ one failed refund does not stop the other bookings from being cancelled
-✔ only the organizer can cancel their event
-✔ register rejects self-signup as admin
-✔ register accepts organizer and normalizes email
-✔ register rejects short password and bad email
-✔ login requires email and password
-✔ createEvent coerces multipart string fields
-✔ idParam rejects non-ObjectId values
-✔ validate middleware forwards a 400 ApiError and replaces body on success
+| Suite | What it proves |
+|---|---|
+| `concurrency.test.js` | 50 users racing for one seat: exactly 1 succeeds, 49 get 409. 40 users picking overlapping seats never double-sell. Triple-click cancel restores seats once. |
+| `payments.test.js` | Forged payment IDs are rejected; client-sent price/discount is ignored; users cannot confirm each other's bookings; simulated payments are refused in production; coupons never drain the wallet; webhook signature, idempotency, amount-mismatch and expiry handling. |
+| `checkin.test.js` | Only the event's organizer can scan; tampered, cancelled or repeated tickets are rejected with correct status codes. |
+| `tests/unit/*` | Validation schemas, auth middleware, QR signing, refund isolation, env/CORS/secret rules. |
 
-ℹ pass 16 | fail 0 | duration ~1.3s
+### Concurrency load test
+
+`npm run loadtest` starts the app on a random port, then 300 users fire booking requests for 30 seats (100 requests in flight). Typical local result:
+
 ```
+Responses by status: { '201': 30, '409': 270 }     # exactly 30 seats sold, 270 clean conflicts
+Latency  p50 590 ms | p95 2029 ms | p99 2189 ms     # in-memory Mongo, single Node process, laptop
+PASS  no seat sold twice
+PASS  availableSeats == capacity - booked
+PASS  no 5xx responses
+```
+
+Tune with `USERS`, `SEATS`, `CONCURRENCY` env vars. Numbers vary by machine; the invariants must always pass.
 
 ```bash
 # Verify frontend build & linting
