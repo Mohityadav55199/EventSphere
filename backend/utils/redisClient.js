@@ -44,6 +44,9 @@ const inMemoryClient = {
   async mget(...keys) {
     return keys.map(k => inMemoryStore.get(k) ?? null);
   },
+  async scan(pattern) {
+    return this.keys(pattern);
+  },
 };
 
 // ── Upstash REST adapter (wraps @upstash/redis to match our interface) ─────────
@@ -58,6 +61,17 @@ function makeUpstashAdapter(upstashClient) {
       if (fnName === "mget") {
         if (args.length === 0) return [];
         return await upstashClient.mget(...args);
+      }
+      if (fnName === "scan") {
+        // Cursor-based iteration: unlike KEYS this never blocks Redis on a big keyspace
+        const found = [];
+        let cursor = "0";
+        do {
+          const [next, batch] = await upstashClient.scan(cursor, { match: args[0], count: 200 });
+          found.push(...batch);
+          cursor = String(next);
+        } while (cursor !== "0");
+        return found;
       }
       return await upstashClient[fnName](...args);
     } catch (err) {
@@ -75,6 +89,7 @@ function makeUpstashAdapter(upstashClient) {
     get: (key) => safeCall("get", key),
     del: (key) => safeCall("del", key),
     keys: (pattern) => safeCall("keys", pattern),
+    scan: (pattern) => safeCall("scan", pattern),
     mget: (...keys) => safeCall("mget", ...keys),
   };
 }
@@ -97,6 +112,16 @@ function makeIoRedisAdapter(ioRedisClient) {
     },
     async keys(pattern) {
       return ioRedisClient.keys(pattern);
+    },
+    async scan(pattern) {
+      const found = new Set(); // SCAN may return a key more than once
+      let cursor = "0";
+      do {
+        const [next, batch] = await ioRedisClient.scan(cursor, "MATCH", pattern, "COUNT", 200);
+        batch.forEach((k) => found.add(k));
+        cursor = next;
+      } while (cursor !== "0");
+      return [...found];
     },
     async mget(...keys) {
       if (keys.length === 0) return [];

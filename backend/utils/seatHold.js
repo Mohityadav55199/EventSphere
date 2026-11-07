@@ -99,7 +99,7 @@ async function releaseHold(eventId, userId, seatsToRelease) {
     } else {
       // Release ALL seats held by this user for this event
       const pattern = `${HOLD_PREFIX}:${eventId}:*`;
-      const keys = await redis.keys(pattern);
+      const keys = await redis.scan(pattern);
       for (const key of keys) {
         const owner = await redis.get(key);
         if (owner === userId) {
@@ -128,7 +128,7 @@ async function getTotalHeldSeats(eventId) {
   const pattern = `${HOLD_PREFIX}:${eventId}:*`;
 
   try {
-    const keys = await redis.keys(pattern);
+    const keys = await redis.scan(pattern);
     if (!keys || keys.length === 0) return [];
 
     // Extract seat IDs from keys e.g. "seat_hold:eventId:A1" -> "A1"
@@ -149,7 +149,7 @@ async function getUserHeldSeats(eventId, userId) {
   const pattern = `${HOLD_PREFIX}:${eventId}:*`;
   
   try {
-    const keys = await redis.keys(pattern);
+    const keys = await redis.scan(pattern);
     let heldByMe = [];
     for (const key of keys) {
       const owner = await redis.get(key);
@@ -172,7 +172,7 @@ async function getEventHolds(eventId) {
   const pattern = `${HOLD_PREFIX}:${eventId}:*`;
 
   try {
-    const keys = await redis.keys(pattern);
+    const keys = await redis.scan(pattern);
     if (!keys || keys.length === 0) return [];
 
     const values = await redis.mget(...keys);

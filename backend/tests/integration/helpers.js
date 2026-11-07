@@ -3,6 +3,13 @@ import mongoose from "mongoose";
 import { MongoMemoryServer } from "mongodb-memory-server";
 
 process.env.NODE_ENV = "test";
+
+// The app logs a lot (emails, sandbox notices, Redis fallbacks). On Node 20 the built-in test runner can
+// misparse its own result stream when a test file prints heavily ("Unable to deserialize cloned data"),
+// so keep app logs quiet unless you ask for them:  TEST_VERBOSE=1 npm test
+if (process.env.NODE_TEST_CONTEXT && !process.env.TEST_VERBOSE) { // NODE_TEST_CONTEXT is set only inside `node --test` workers
+  for (const level of ["log", "info", "warn", "error"]) console[level] = () => {};
+}
 process.env.ACCESS_TOKEN_SECRET = "test-access-secret";
 process.env.REFRESH_TOKEN_SECRET = "test-refresh-secret";
 process.env.ACCESS_TOKEN_EXPIRY = "1h";
