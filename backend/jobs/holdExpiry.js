@@ -7,7 +7,8 @@
  *
  * For each expired hold:
  *   1. Marks the booking status = "expired"
- *   2. Atomically restores seats in MongoDB (availableSeats += seatsBooked)
+ *   2. Releases the Redis seat holds (MongoDB seats are only taken on payment,
+ *      so there is nothing to restore there)
  *   3. Broadcasts seatUpdate via Socket.io so live seat counters update
  *
  * This is the safety net that handles users who:
@@ -19,31 +20,8 @@
 import cron from "node-cron";
 import mongoose from "mongoose";
 import Booking from "../models/booking.model.js";
-import Event from "../models/event.model.js";
-import { atomicRestoreSeats } from "../utils/bookingLock.js";
 import { releaseHold } from "../utils/seatHold.js";
-import { getTotalHeldSeats } from "../utils/seatHold.js";
-
-// Helper: emit seat update to watching clients
-async function emitSeatUpdate(eventId) {
-  try {
-    const { getIO } = await import("../socket.js");
-    const io = getIO();
-    const event = await Event.findById(eventId).select("availableSeats capacity");
-    const heldSeats = await getTotalHeldSeats(String(eventId));
-
-    io.to(`seats:${eventId}`).emit("seatUpdate", {
-      eventId: String(eventId),
-      availableSeats: event?.availableSeats ?? 0,
-      heldSeats,
-      effectiveFreeSeats: Math.max(0, (event?.availableSeats ?? 0) - heldSeats),
-      capacity: event?.capacity ?? 0,
-      timestamp: new Date().toISOString(),
-    });
-  } catch {
-    // Non-critical — socket might not be initialized during tests
-  }
-}
+import { emitSeatUpdate } from "../utils/seatBroadcast.js";
 
 let isRunning = false; // Prevent overlapping runs
 
@@ -72,31 +50,24 @@ async function processExpiredHolds() {
 
     for (const booking of expiredBookings) {
       try {
-        // 1. Mark booking expired
-        await Booking.findByIdAndUpdate(booking._id, {
-          status: "expired",
-          paymentstatus: "cancelled",
-          cancelDate: now,
-        });
+        // 1. Mark booking expired - conditional, so a payment confirmed a moment ago is never overwritten
+        const expired = await Booking.findOneAndUpdate(
+          { _id: booking._id, status: "hold" },
+          { status: "expired", paymentstatus: "cancelled", cancelDate: now }
+        );
+        if (!expired) continue;
 
-        // 2. Release Redis hold (might already be gone, but clean up anyway)
-        await releaseHold(String(booking.event), String(booking.user));
-
-        // 3. Restore seats atomically in MongoDB
-        const event = await Event.findById(booking.event).select("capacity");
-        await atomicRestoreSeats(booking.event, booking.seatsBooked, event?.capacity);
+        // 2. Release the Redis holds for exactly the seats this booking reserved
+        await releaseHold(String(booking.event), String(booking.user), booking.selectedSeats);
 
         affectedEventIds.add(String(booking.event));
-
-        console.log(
-          `  ✅ Expired hold for booking ${booking._id}: restored ${booking.seatsBooked} seats to event ${booking.event}`
-        );
+        console.log(`  ✅ Expired hold for booking ${booking._id}: released ${booking.selectedSeats.length} seat(s) on event ${booking.event}`);
       } catch (err) {
         console.error(`  ❌ Failed to process expired booking ${booking._id}:`, err.message);
       }
     }
 
-    // 4. Broadcast seat updates for all affected events
+    // 3. Broadcast seat updates for all affected events
     for (const eventId of affectedEventIds) {
       await emitSeatUpdate(eventId);
     }

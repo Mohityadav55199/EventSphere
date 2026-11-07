@@ -4,6 +4,7 @@ import  Event  from "../models/event.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import Booking from '../models/booking.model.js';
+import { refundBooking } from "../utils/refund.js";
 
 // Short-lived in-memory cache for the public events list (cheap win on a single Render instance).
 // Cleared on any event write; otherwise entries expire after EVENTS_CACHE_TTL_MS.
@@ -213,32 +214,6 @@ const myEvents = asyncHandler(async (req, res) => {
     res.status(200).json(new ApiResponse(200, events, "Events fetched successfully"))
 
 });
-
-// Refunds one booking through whichever gateway took the payment. Throws on failure.
-async function refundBooking(booking) {
-    if (!booking.amountPaid) return "nothing-to-refund";
-
-    if (booking.razorpayPaymentId) {
-        const Razorpay = (await import("razorpay")).default;
-        const razorpay = new Razorpay({
-            key_id: process.env.RAZORPAY_KEY_ID,
-            key_secret: process.env.RAZORPAY_KEY_SECRET,
-        });
-        await razorpay.payments.refund(booking.razorpayPaymentId, { amount: Math.round(booking.amountPaid * 100) });
-        return "refunded";
-    }
-
-    if (booking.stripeSessionId) {
-        const Stripe = (await import("stripe")).default;
-        const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-        const session = await stripe.checkout.sessions.retrieve(booking.stripeSessionId);
-        if (!session.payment_intent) return "nothing-to-refund";
-        await stripe.refunds.create({ payment_intent: session.payment_intent });
-        return "refunded";
-    }
-
-    return "nothing-to-refund";
-}
 
 const cancelEvent = asyncHandler(async (req, res) => {
     const event = await Event.findById(req.params.eventid);

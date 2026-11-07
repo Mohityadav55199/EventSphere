@@ -6,13 +6,16 @@ import User from "./models/user.model.js";
 import Booking from "./models/booking.model.js";
 import Event from "./models/event.model.js";
 import { getTotalHeldSeats } from "./utils/seatHold.js";
+import { corsOriginCheck } from "./config/cors.js";
+
+const MAX_MESSAGE_LENGTH = 1000;
 
 let io;
 
 export const initSocket = (server) => {
   io = new Server(server, {
     cors: {
-      origin: "*", // Change in production
+      origin: corsOriginCheck,
       methods: ["GET", "POST"],
     },
   });
@@ -124,23 +127,28 @@ export const initSocket = (server) => {
       }
     });
 
-    socket.on("sendMessage", async ({ roomId, message }) => {
-      if (!socket.user) return socket.emit("error", "Authentication required");
-      if (!message?.trim()) return;
+    socket.on("sendMessage", async ({ roomId, message } = {}) => {
+      try {
+        if (!socket.user) return socket.emit("error", "Authentication required");
+        if (typeof message !== "string" || !message.trim()) return;
+        if (message.length > MAX_MESSAGE_LENGTH) {
+          return socket.emit("error", `Messages are limited to ${MAX_MESSAGE_LENGTH} characters`);
+        }
+        if (!socket.rooms.has(roomId)) {
+          return socket.emit("error", "You are not allowed to send messages to this room");
+        }
 
-      const rooms = Array.from(socket.rooms);
-      if (!rooms.includes(roomId)) {
-        return socket.emit("error", "You are not allowed to send messages to this room");
+        const newMessage = await ChatMessage.create({
+          roomId,
+          sender: socket.user._id,
+          message: message.trim(),
+        });
+        const populatedMsg = await newMessage.populate("sender", "name");
+        io.to(roomId).emit("newMessage", populatedMsg);
+      } catch (err) {
+        console.error("sendMessage failed:", err.message);
+        socket.emit("error", "Failed to send message");
       }
-
-      const newMessage = await ChatMessage.create({
-        roomId,
-        sender: socket.user._id,
-        message,
-      });
-
-      const populatedMsg = await newMessage.populate("sender", "name");
-      io.to(roomId).emit("newMessage", populatedMsg);
     });
 
     socket.on("leaveRoom", (roomId) => {
@@ -149,11 +157,11 @@ export const initSocket = (server) => {
     });
 
     socket.on("typing", (roomId) => {
-      if (socket.user) socket.to(roomId).emit("typing", socket.user.name);
+      if (socket.user && socket.rooms.has(roomId)) socket.to(roomId).emit("typing", socket.user.name);
     });
 
     socket.on("stopTyping", (roomId) => {
-      socket.to(roomId).emit("stopTyping");
+      if (socket.rooms.has(roomId)) socket.to(roomId).emit("stopTyping");
     });
 
     socket.on("disconnect", () => {

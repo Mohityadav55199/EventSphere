@@ -64,6 +64,10 @@ const bookingSchema = new Schema({
     amountPaid: {
         type: Number,
     },
+    // Server-computed at order time; verifyPayment trusts these, never the request body
+    amountDue: { type: Number, default: 0 },
+    couponDiscount: { type: Number, default: 0 },
+    pointsUsed: { type: Number, default: 0 },
     ticketTier: {
         type: String,
         default: "Standard Pass",

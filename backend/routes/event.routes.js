@@ -13,10 +13,6 @@ import { autoSeedEventsIfEmpty } from "../utils/autoSeed.js";
 // Public routes
 eventRouter.route('/all-events').get(getAllActiveEvents);
 eventRouter.route('/event/:id').get(getEventbyId);
-eventRouter.route('/seed-demo').get(async (req, res) => {
-    await autoSeedEventsIfEmpty();
-    res.json({ success: true, message: "Demo events checked and populated if empty" });
-});
 
 // oranizer routes
 eventRouter.route('/create-event').post(
@@ -52,6 +48,19 @@ eventRouter.route('/cancel-event/:eventid').patch(
 );
 
 // Admin routes
+eventRouter.route('/seed-demo').get(
+    authMiddleware,
+    authorizeRoles("admin"),
+    async (req, res, next) => {
+        try {
+            await autoSeedEventsIfEmpty();
+            res.json({ success: true, message: "Demo events checked and populated if empty" });
+        } catch (err) {
+            next(err);
+        }
+    }
+);
+
 eventRouter.route('/admin/all-events').get(
     authMiddleware,
     authorizeRoles("admin"),  

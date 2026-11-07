@@ -29,6 +29,7 @@
  * ─────────────────────────────────────────────────────────
  */
 
+import mongoose from "mongoose";
 import Booking from "../models/booking.model.js";
 import Event from "../models/event.model.js";
 import User from "../models/user.model.js";
@@ -41,51 +42,140 @@ import { DEFAULT_HOLD_SECONDS } from "../utils/seatHold.js";
 import QRcode from "qrcode";
 import crypto from "crypto";
 import Stripe from "stripe";
-import { getIO } from "../socket.js";
 import { sendTicketConfirmationEmail } from "../utils/emailService.js";
+import { emitSeatUpdate } from "../utils/seatBroadcast.js";
+import { getQrSecret } from "../utils/qrSecret.js";
+import { isSandboxAllowed, isSimulatedId } from "../utils/paymentMode.js";
+import { refundBooking } from "../utils/refund.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || "sk_test_dummy_stripe_secret_key_12345");
 
-// ─── Helper: Emit live seat availability to all watching clients ──────────────
-async function emitSeatUpdate(eventId) {
-  try {
-    const io = getIO();
-    const event = await Event.findById(eventId).select("availableSeats capacity bookedSeats");
-    const heldSeats = await getTotalHeldSeats(String(eventId)); // now returns array of seat IDs
-
-    io.to(`seats:${eventId}`).emit("seatUpdate", {
-      eventId: String(eventId),
-      availableSeats: event?.availableSeats ?? 0,
-      bookedSeats: event?.bookedSeats || [],
-      heldSeats: heldSeats || [],
-      capacity: event?.capacity ?? 0,
-      timestamp: new Date().toISOString(),
-    });
-  } catch {
-    // Non-critical — don't fail the booking if socket emit fails
-  }
-}
+const MAX_SEATS_PER_ORDER = 10;
+const COUPONS = { SPHERE20: 0.2, WELCOME10: 0.1, FESTIVAL50: 0.5 };
 
 // ─── Helper: Generate secure QR code ─────────────────────────────────────────
 async function generateSecureQRCode(booking) {
-  const secretKey = process.env.QR_SECRET || "eventease_qr_secret_key_987654321";
   const qrPayload = `${booking._id}:${crypto.randomBytes(8).toString("hex")}`;
-  const qrHash = crypto.createHmac("sha256", secretKey).update(qrPayload).digest("hex");
+  const qrHash = crypto.createHmac("sha256", getQrSecret()).update(qrPayload).digest("hex");
 
   booking.qrCodeData = { payload: qrPayload, hash: qrHash };
-  const qrDataString = JSON.stringify({ payload: qrPayload, hash: qrHash });
-  booking.qrCode = await QRcode.toDataURL(qrDataString);
+  booking.qrCode = await QRcode.toDataURL(JSON.stringify({ payload: qrPayload, hash: qrHash }));
   return booking;
+}
+
+// Seat IDs come from the client: accept only a short list of unique, short strings.
+function normalizeSeats(selectedSeats) {
+  if (!Array.isArray(selectedSeats) || selectedSeats.length < 1) {
+    throw new ApiError(400, "Event ID and an array of selected seats are required");
+  }
+  const seats = selectedSeats.map((s) => (typeof s === "string" || typeof s === "number" ? String(s).trim() : ""));
+  if (seats.some((s) => !s || s.length > 20)) throw new ApiError(400, "Invalid seat identifier");
+  if (new Set(seats).size !== seats.length) throw new ApiError(400, "Duplicate seats selected");
+  if (seats.length > MAX_SEATS_PER_ORDER) {
+    throw new ApiError(400, `You can book at most ${MAX_SEATS_PER_ORDER} seats at a time`);
+  }
+  return seats;
+}
+
+async function addAttendee(eventId, userId, seatsBooked) {
+  const bumped = await Event.updateOne(
+    { _id: eventId, "attendees.user": userId },
+    { $inc: { "attendees.$.ticketsBooked": seatsBooked } }
+  );
+  if (!bumped.matchedCount) {
+    await Event.updateOne(
+      { _id: eventId, "attendees.user": { $ne: userId } },
+      { $push: { attendees: { user: userId, ticketsBooked: seatsBooked } } }
+    );
+  }
+}
+
+// Gateway failed or isn't configured: in production the checkout must fail (never simulate a payment).
+async function abortPendingOrder(pendingBooking, eventId, userId, selectedSeats) {
+  await Booking.findByIdAndUpdate(pendingBooking._id, {
+    status: "expired",
+    paymentstatus: "cancelled",
+    cancelDate: new Date(),
+  });
+  await releaseHold(String(eventId), String(userId), selectedSeats);
+  await emitSeatUpdate(eventId);
+}
+
+// ─── Finalize a paid (or fully discounted) hold booking ───────────────────────
+// Everything here is derived from the stored booking, never from the request.
+async function confirmBooking(booking, event, user, paymentFields = {}) {
+  const seats = booking.selectedSeats;
+  const pointsUsed = booking.pointsUsed || 0;
+
+  // Spend wallet points atomically (fails if the balance dropped since the order was created)
+  if (pointsUsed > 0) {
+    const spent = await User.updateOne(
+      { _id: user._id, walletPoints: { $gte: pointsUsed } },
+      { $inc: { walletPoints: -pointsUsed } }
+    );
+    if (!spent.modifiedCount) {
+      throw new ApiError(409, "Your wallet balance changed. Please start the booking again.");
+    }
+  }
+
+  const refundPoints = () =>
+    pointsUsed > 0 ? User.updateOne({ _id: user._id }, { $inc: { walletPoints: pointsUsed } }) : null;
+
+  // Final overselling guard at the DB level
+  try {
+    await atomicDecrementSeats(booking.event, seats);
+  } catch (err) {
+    await refundPoints();
+    throw err;
+  }
+  await confirmHold(String(booking.event), String(user._id), seats);
+
+  const amountPaid = booking.amountDue || 0;
+  const confirmed = await Booking.findOneAndUpdate(
+    { _id: booking._id, status: "hold" },
+    {
+      $set: {
+        ...paymentFields,
+        amountPaid,
+        paymentstatus: "confirmed",
+        status: "confirmed",
+        holdExpiresAt: null,
+      },
+    },
+    { new: true }
+  );
+  if (!confirmed) {
+    // Lost a race with another confirm/cancel/expiry: undo what we just did
+    await atomicRestoreSeats(booking.event, seats);
+    await refundPoints();
+    throw new ApiError(409, "This booking is no longer pending.");
+  }
+
+  await generateSecureQRCode(confirmed);
+  await confirmed.save();
+
+  await addAttendee(event._id, user._id, seats.length);
+
+  const earnedPoints = Math.floor(amountPaid / 20);
+  const updatedUser = await User.findByIdAndUpdate(
+    user._id,
+    { $inc: { walletPoints: earnedPoints } },
+    { new: true }
+  );
+
+  sendTicketConfirmationEmail({ user: updatedUser || user, event, booking: confirmed }).catch((emailErr) => {
+    console.warn("⚠️ Ticket email dispatch error:", emailErr.message);
+  });
+
+  await emitSeatUpdate(booking.event);
+  return { booking: confirmed, earnedPoints, remainingPoints: updatedUser?.walletPoints ?? 0 };
 }
 
 // ─── createOrder ─────────────────────────────────────────────────────────────
 const createOrder = asyncHandler(async (req, res) => {
   const { eventId } = req.params;
-  const { selectedSeats, usePoints, couponCode, ticketTier, paymentGateway = "stripe" } = req.body;
-
-  if (!eventId || !Array.isArray(selectedSeats) || selectedSeats.length < 1) {
-    throw new ApiError(400, "Event ID and an array of selected seats are required");
-  }
+  const { usePoints, couponCode, ticketTier, paymentGateway = "stripe" } = req.body;
+  const selectedSeats = normalizeSeats(req.body.selectedSeats);
 
   const seatsBooked = selectedSeats.length;
   const event = await Event.findById(eventId);
@@ -95,9 +185,7 @@ const createOrder = asyncHandler(async (req, res) => {
   }
 
   // ── LAYER 1: Redis seat hold ────────────────────────────────────────────────
-  // availableSeats may be undefined on very old events — fall back to capacity
   const effectiveAvailable = event.availableSeats ?? event.capacity;
-
   const holdResult = await holdSeats(
     String(eventId),
     String(req.user._id),
@@ -105,51 +193,42 @@ const createOrder = asyncHandler(async (req, res) => {
     effectiveAvailable,
     DEFAULT_HOLD_SECONDS
   );
-
   if (!holdResult.success) {
     throw new ApiError(409, holdResult.reason || "Not enough seats available. Try fewer seats.");
   }
 
-  // ── Price & discount calculation ────────────────────────────────────────────
-  let unitPrice = event.Price;
-  let selectedTierName = ticketTier || "Standard Pass";
-  if (event.ticketTypes?.length > 0 && ticketTier) {
-    const foundTier = event.ticketTypes.find(
-      (t) => t.name.toLowerCase() === ticketTier.toLowerCase()
-    );
-    if (foundTier) {
-      unitPrice = foundTier.price;
-      selectedTierName = foundTier.name;
+  let pendingBooking;
+  try {
+    // ── Price & discount calculation (server-side only) ───────────────────────
+    let unitPrice = event.Price;
+    let selectedTierName = ticketTier || "Standard Pass";
+    if (event.ticketTypes?.length > 0 && ticketTier) {
+      const foundTier = event.ticketTypes.find(
+        (t) => t.name.toLowerCase() === String(ticketTier).toLowerCase()
+      );
+      if (foundTier) {
+        unitPrice = foundTier.price;
+        selectedTierName = foundTier.name;
+      }
     }
-  }
 
-  const totalPrice = unitPrice * seatsBooked;
-  const user = await User.findById(req.user._id);
-  let discount = 0;
+    const totalPrice = unitPrice * seatsBooked;
+    const user = await User.findById(req.user._id);
 
-  if (couponCode) {
-    const code = String(couponCode).toUpperCase().trim();
-    if (code === "SPHERE20") discount += Math.round(totalPrice * 0.20);
-    else if (code === "WELCOME10") discount += Math.round(totalPrice * 0.10);
-    else if (code === "FESTIVAL50") discount += Math.round(totalPrice * 0.50);
-  }
-  if (usePoints) {
-    const remainingToPay = Math.max(0, totalPrice - discount);
-    discount += Math.min(user.walletPoints, remainingToPay);
-  }
+    let couponDiscount = 0;
+    if (couponCode) {
+      const rate = COUPONS[String(couponCode).toUpperCase().trim()];
+      if (rate) couponDiscount = Math.round(totalPrice * rate);
+    }
+    let pointsUsed = 0;
+    if (usePoints) {
+      pointsUsed = Math.min(user.walletPoints, Math.max(0, totalPrice - couponDiscount));
+    }
+    const discount = couponDiscount + pointsUsed;
+    const amountToPay = Math.max(0, totalPrice - discount);
+    const holdExpiresAt = new Date(Date.now() + DEFAULT_HOLD_SECONDS * 1000);
 
-  let amountToPay = Math.max(0, totalPrice - discount);
-  const holdExpiresAt = new Date(Date.now() + DEFAULT_HOLD_SECONDS * 1000);
-
-  // ── Wallet-only booking (skip Stripe) ──────────────────────────────────────
-  if (amountToPay <= 0) {
-    // Confirm hold in Redis
-    await confirmHold(String(eventId), String(req.user._id), selectedSeats);
-
-    // ── LAYER 2: Atomic MongoDB seat decrement ──────────────────────────────
-    await atomicDecrementSeats(eventId, selectedSeats);
-
-    const booking = await Booking.create({
+    pendingBooking = await Booking.create({
       user: req.user._id,
       event: event._id,
       selectedSeats,
@@ -157,414 +236,323 @@ const createOrder = asyncHandler(async (req, res) => {
       ticketTier: selectedTierName,
       ticketPrice: unitPrice,
       amountPaid: 0,
-      paymentstatus: "confirmed",
-      status: "confirmed",
-      holdExpiresAt: null,
+      amountDue: amountToPay,
+      couponDiscount,
+      pointsUsed,
+      paymentstatus: "pending",
+      status: "hold",
+      holdExpiresAt,
     });
 
-    user.walletPoints -= discount;
-    await user.save();
-
-    // Update attendees list
-    const existingAttendee = event.attendees.find(
-      (att) => att.user.toString() === req.user._id.toString()
-    );
-    if (existingAttendee) {
-      existingAttendee.ticketsBooked += seatsBooked;
-    } else {
-      event.attendees.push({ user: req.user._id, ticketsBooked: seatsBooked });
+    // ── Nothing to charge (wallet points / 100% coupon): confirm immediately ──
+    if (amountToPay <= 0) {
+      const result = await confirmBooking(pendingBooking, event, user);
+      return res.status(201).json(
+        new ApiResponse(201, {
+          booking: result.booking,
+          earnedPoints: result.earnedPoints,
+          remainingPoints: result.remainingPoints,
+        }, "Booking confirmed via wallet")
+      );
     }
-    await event.save();
 
-    const qrBooking = await generateSecureQRCode(booking);
-    await qrBooking.save();
+    const baseResponse = {
+      bookingId: pendingBooking._id,
+      eventTitle: event.title,
+      amountToPay,
+      discount,
+      selectedTier: selectedTierName,
+      unitPrice,
+      user: { name: user.name, email: user.email },
+    };
 
-    // ── Email Confirmation Dispatch ──────────────────────────────────────────
-    sendTicketConfirmationEmail({ user, event, booking: qrBooking }).catch((emailErr) => {
-      console.warn("⚠️ Ticket email dispatch error:", emailErr.message);
-    });
-
-    // ── LAYER 3: Broadcast seat update ─────────────────────────────────────
-    await emitSeatUpdate(eventId);
-
-    return res.status(201).json(
-      new ApiResponse(201, {
-        booking: qrBooking,
-        earnedPoints: 0,
-        remainingPoints: user.walletPoints,
-      }, "Booking confirmed via wallet")
-    );
-  }
-
-  // Create a pending Booking doc NOW (with status:"hold") so the expiry job
-  // can restore seats if the user abandons without paying.
-  const pendingBooking = await Booking.create({
-    user: req.user._id,
-    event: event._id,
-    selectedSeats,
-    seatsBooked,
-    ticketTier: selectedTierName,
-    ticketPrice: unitPrice,
-    amountPaid: 0,
-    paymentstatus: "pending",
-    status: "hold",
-    holdExpiresAt,
-  });
-
-  // ── Regional Gateway: Razorpay (UPI, Google Pay UPI, PhonePe, NetBanking) ─
-  if (paymentGateway === "razorpay") {
-    try {
-      if (!process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_KEY_ID.includes("dummy")) {
-        throw new Error("Razorpay credentials unconfigured in environment");
+    // ── Regional Gateway: Razorpay (UPI, Google Pay UPI, PhonePe, NetBanking) ─
+    if (paymentGateway === "razorpay") {
+      let razorpayOrder;
+      let simulated = false;
+      try {
+        if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_KEY_ID.includes("dummy")) {
+          throw new Error("Razorpay credentials unconfigured in environment");
+        }
+        const Razorpay = (await import("razorpay")).default;
+        const razorpay = new Razorpay({
+          key_id: process.env.RAZORPAY_KEY_ID,
+          key_secret: process.env.RAZORPAY_KEY_SECRET,
+        });
+        razorpayOrder = await razorpay.orders.create({
+          amount: Math.round(amountToPay * 100), // in paise
+          currency: "INR",
+          receipt: `rcpt_${pendingBooking._id.toString().slice(-10)}`,
+          notes: { bookingId: String(pendingBooking._id), eventId: String(eventId) },
+        });
+      } catch (err) {
+        if (!isSandboxAllowed()) {
+          console.error("Razorpay order failed:", err.message);
+          await abortPendingOrder(pendingBooking, eventId, req.user._id, selectedSeats);
+          throw new ApiError(502, "Payment gateway unavailable. Please try again later.");
+        }
+        console.warn("⚠️ Razorpay order notice:", err.message, "— activating sandbox test simulation.");
+        simulated = true;
+        razorpayOrder = {
+          id: `order_sim_${Date.now()}_${pendingBooking._id.toString().slice(-6)}`,
+          amount: Math.round(amountToPay * 100),
+          currency: "INR",
+        };
       }
-      const Razorpay = (await import("razorpay")).default;
-      const razorpay = new Razorpay({
-        key_id: process.env.RAZORPAY_KEY_ID,
-        key_secret: process.env.RAZORPAY_KEY_SECRET,
-      });
 
-      const razorpayOrder = await razorpay.orders.create({
-        amount: Math.round(amountToPay * 100), // in paise
-        currency: "INR",
-        receipt: `rcpt_${pendingBooking._id.toString().slice(-10)}`,
-        notes: {
-          bookingId: String(pendingBooking._id),
-          eventId: String(eventId),
-        },
-      });
-
-      pendingBooking.razorpayOrderId = razorpayOrder.id;
-      await pendingBooking.save();
+      await Booking.findByIdAndUpdate(pendingBooking._id, { razorpayOrderId: razorpayOrder.id });
 
       return res.status(200).json(
         new ApiResponse(200, {
+          ...baseResponse,
           gateway: "razorpay",
           orderId: razorpayOrder.id,
           amount: razorpayOrder.amount,
           currency: razorpayOrder.currency,
-          keyId: process.env.RAZORPAY_KEY_ID,
-          bookingId: pendingBooking._id,
-          eventTitle: event.title,
-          amountToPay,
-          discount,
-          selectedTier: selectedTierName,
-          unitPrice,
-          user: {
-            name: user.name,
-            email: user.email,
-          },
-        }, "Razorpay order initialized successfully")
-      );
-    } catch (err) {
-      console.warn("⚠️ Razorpay order notice:", err.message, "— activating sandbox test simulation.");
-      const simOrderId = `order_sim_${Date.now()}_${pendingBooking._id.toString().slice(-6)}`;
-      pendingBooking.razorpayOrderId = simOrderId;
-      await pendingBooking.save();
-
-      return res.status(200).json(
-        new ApiResponse(200, {
-          gateway: "razorpay",
-          orderId: simOrderId,
-          amount: Math.round(amountToPay * 100),
-          currency: "INR",
           keyId: process.env.RAZORPAY_KEY_ID || "rzp_test_sim",
-          bookingId: pendingBooking._id,
-          eventTitle: event.title,
-          amountToPay,
-          discount,
-          selectedTier: selectedTierName,
-          unitPrice,
-          user: {
-            name: user.name,
-            email: user.email,
-          },
-          isSimulated: true,
-        }, "Razorpay sandbox order initialized")
+          ...(simulated ? { isSimulated: true } : {}),
+        }, simulated ? "Razorpay sandbox order initialized" : "Razorpay order initialized successfully")
       );
     }
-  }
 
-  // ── International Gateway: Stripe (Apple Pay, Google Pay, Cards) ──────────
-  let session;
-  try {
-    if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY.includes("dummy")) {
-      throw new Error("Stripe secret key unconfigured in environment");
-    }
-    session = await stripe.checkout.sessions.create({
-      line_items: [
-        {
-          price_data: {
-            currency: "inr",
-            product_data: {
-              name: event.title,
-              description: `${seatsBooked} ticket(s) for ${event.title}`,
-              images: event.image ? [event.image] : [],
+    // ── International Gateway: Stripe (Apple Pay, Google Pay, Cards) ──────────
+    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    let session;
+    try {
+      if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY.includes("dummy")) {
+        throw new Error("Stripe secret key unconfigured in environment");
+      }
+      session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "inr",
+              product_data: {
+                name: event.title,
+                description: `${seatsBooked} ticket(s) for ${event.title}`,
+                images: event.image ? [event.image] : [],
+              },
+              unit_amount: Math.round(amountToPay * 100),
             },
-            unit_amount: Math.round(amountToPay * 100),
+            quantity: 1,
           },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      customer_email: user.email,
-      metadata: {
-        bookingId: String(pendingBooking._id),
-        eventId: String(eventId),
-        selectedSeats: JSON.stringify(selectedSeats),
-        discount: String(discount),
-        ticketTier: selectedTierName,
-        ticketPrice: String(unitPrice),
-      },
-      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/profile?session_id={CHECKOUT_SESSION_ID}&booking_id=${pendingBooking._id}&event_id=${eventId}&seats=${encodeURIComponent(JSON.stringify(selectedSeats))}&discount=${discount}&tier=${encodeURIComponent(selectedTierName)}&price=${unitPrice}`,
-      cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/event/${eventId}`,
-      expires_at: Math.floor(Date.now() / 1000) + DEFAULT_HOLD_SECONDS,
-    });
+        ],
+        mode: "payment",
+        customer_email: user.email,
+        metadata: { bookingId: String(pendingBooking._id), eventId: String(eventId) },
+        // Only IDs travel in the URL; price, seats and discount are read from the booking server-side
+        success_url: `${clientUrl}/profile?session_id={CHECKOUT_SESSION_ID}&booking_id=${pendingBooking._id}&event_id=${eventId}`,
+        cancel_url: `${clientUrl}/event/${eventId}`,
+        expires_at: Math.floor(Date.now() / 1000) + DEFAULT_HOLD_SECONDS,
+      });
+    } catch (err) {
+      if (!isSandboxAllowed()) {
+        console.error("Stripe session failed:", err.message);
+        await abortPendingOrder(pendingBooking, eventId, req.user._id, selectedSeats);
+        throw new ApiError(502, "Payment gateway unavailable. Please try again later.");
+      }
+      console.warn("⚠️ Stripe session notice:", err.message, "— activating sandbox test simulation.");
+      const simSessionId = `sim_cs_${Date.now()}_${pendingBooking._id.toString().slice(-6)}`;
+      session = {
+        id: simSessionId,
+        url: `${clientUrl}/profile?session_id=${simSessionId}&booking_id=${pendingBooking._id}&event_id=${eventId}`,
+      };
+    }
 
     await Booking.findByIdAndUpdate(pendingBooking._id, { stripeSessionId: session.id });
+
+    // ── LAYER 3: Broadcast that seats are now on hold ─────────────────────────
+    await emitSeatUpdate(eventId);
+
+    res.status(200).json(
+      new ApiResponse(200, {
+        orderId: session.id,
+        stripeSessionId: session.id,
+        bookingId: String(pendingBooking._id),
+        checkoutUrl: session.url,
+        currency: "inr",
+        amount: amountToPay,
+        seatsBooked,
+        eventId,
+        totalPrice,
+        discount,
+        holdExpiresAt,
+        remainingPoints: user.walletPoints - pointsUsed,
+        isSimulated: isSimulatedId(session.id),
+      }, "Checkout session created. Seats held for 30 minutes.")
+    );
   } catch (err) {
-    console.warn("⚠️ Stripe session notice:", err.message, "— activating sandbox test simulation.");
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
-    const simSessionId = `sim_cs_${Date.now()}_${pendingBooking._id.toString().slice(-6)}`;
-    await Booking.findByIdAndUpdate(pendingBooking._id, { stripeSessionId: simSessionId });
-    session = {
-      id: simSessionId,
-      url: `${clientUrl}/profile?session_id=${simSessionId}&booking_id=${pendingBooking._id}&event_id=${eventId}&seats=${encodeURIComponent(JSON.stringify(selectedSeats))}&discount=${discount}&tier=${encodeURIComponent(selectedTierName)}&price=${unitPrice}`,
+    // Anything that failed after the hold was taken must not leave seats locked
+    // (abortPendingOrder already cleaned up after gateway failures)
+    if (!(err instanceof ApiError && err.statusCode === 502)) {
+      await releaseHold(String(eventId), String(req.user._id), selectedSeats);
+      if (pendingBooking) {
+        await Booking.updateOne(
+          { _id: pendingBooking._id, status: "hold" },
+          { status: "expired", paymentstatus: "cancelled", cancelDate: new Date() }
+        );
+      }
+    }
+    throw err;
+  }
+});
+
+// ─── Payment proof checks (throw ApiError unless the payment is genuine) ──────
+async function assertPaymentGenuine(booking, body) {
+  const { stripe_session_id, razorpay_order_id, razorpay_payment_id, razorpay_signature } = body;
+
+  if (razorpay_order_id) {
+    if (booking.razorpayOrderId !== razorpay_order_id) {
+      throw new ApiError(400, "Payment does not match this booking");
+    }
+    if (isSimulatedId(booking.razorpayOrderId)) {
+      if (!isSandboxAllowed()) throw new ApiError(400, "Simulated payments are disabled");
+      return { razorpayOrderId: razorpay_order_id, razorpayPaymentId: `pay_sim_${Date.now()}` };
+    }
+    if (!process.env.RAZORPAY_KEY_SECRET || !razorpay_payment_id || !razorpay_signature) {
+      throw new ApiError(400, "Razorpay payment details are required");
+    }
+    const expected = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+      .digest("hex");
+    const a = Buffer.from(expected);
+    const b = Buffer.from(String(razorpay_signature));
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      throw new ApiError(400, "Invalid Razorpay payment signature");
+    }
+    return { razorpayOrderId: razorpay_order_id, razorpayPaymentId: razorpay_payment_id, razorpaySignature: razorpay_signature };
+  }
+
+  if (stripe_session_id) {
+    if (booking.stripeSessionId !== stripe_session_id) {
+      throw new ApiError(400, "Payment does not match this booking");
+    }
+    if (isSimulatedId(booking.stripeSessionId)) {
+      if (!isSandboxAllowed()) throw new ApiError(400, "Simulated payments are disabled");
+      return { stripeSessionId: stripe_session_id, stripePaymentIntentId: `pi_${stripe_session_id}` };
+    }
+    let session;
+    try {
+      session = await stripe.checkout.sessions.retrieve(stripe_session_id);
+    } catch {
+      throw new ApiError(400, "Could not verify the Stripe payment");
+    }
+    if (
+      session.payment_status !== "paid" ||
+      session.metadata?.bookingId !== String(booking._id) ||
+      session.amount_total !== Math.round((booking.amountDue || 0) * 100)
+    ) {
+      throw new ApiError(402, "Payment has not been completed");
+    }
+    return {
+      stripeSessionId: stripe_session_id,
+      stripePaymentIntentId: typeof session.payment_intent === "string" ? session.payment_intent : `pi_${stripe_session_id}`,
     };
   }
 
-  // ── LAYER 3: Broadcast that seats are now on hold ──────────────────────────
-  await emitSeatUpdate(eventId);
-
-  res.status(200).json(
-    new ApiResponse(200, {
-      orderId: session.id,
-      stripeSessionId: session.id,
-      bookingId: String(pendingBooking._id), // frontend uses this to track hold
-      checkoutUrl: session.url,
-      currency: session.currency || "inr",
-      amount: amountToPay,
-      seatsBooked,
-      eventId,
-      totalPrice,
-      discount,
-      holdExpiresAt,
-      remainingPoints: user.walletPoints - discount,
-      isSimulated: session.id.startsWith("sim_cs_"),
-    }, "Checkout session created. Seats held for 10 minutes.")
-  );
-});
+  throw new ApiError(400, "A Stripe session ID or Razorpay order ID is required");
+}
 
 // ─── verifyPayment ────────────────────────────────────────────────────────────
+// The request only says WHICH booking and carries the gateway proof. Seats, prices
+// and discounts all come from the booking created by createOrder.
 const verifyPayment = asyncHandler(async (req, res) => {
-  const {
-    stripe_session_id,
-    razorpay_order_id,
-    razorpay_payment_id,
-    eventId,
-    selectedSeats, // Array, JSON string, or retrieved from pending booking
-    discount,
-    ticketTier,
-    ticketPrice,
-    bookingId, // pending booking ID from createOrder response
-  } = req.body;
-
-  let resolvedEventId = eventId;
-  let resolvedSeats = selectedSeats;
-
-  // If selectedSeats is a JSON string or comma-separated string, parse it
-  if (typeof resolvedSeats === "string") {
-    try {
-      resolvedSeats = JSON.parse(resolvedSeats);
-    } catch {
-      resolvedSeats = resolvedSeats.includes(",") ? resolvedSeats.split(",").map(s => s.trim()) : [resolvedSeats];
-    }
+  const { bookingId } = req.body;
+  if (!bookingId || !mongoose.isValidObjectId(bookingId)) {
+    throw new ApiError(400, "A valid booking ID is required");
   }
 
-  // If bookingId is provided, retrieve eventId and selectedSeats directly from the pending booking doc
-  let booking = null;
-  if (bookingId) {
-    booking = await Booking.findOne({
-      _id: bookingId,
-      user: req.user._id,
-      status: "hold",
-    });
-    if (booking?.holdExpiresAt && booking.holdExpiresAt < new Date()) {
-      booking.status = "expired";
-      await booking.save();
-      throw new ApiError(409, "Your seat hold has expired. Please start the booking again.");
-    }
-    if (booking) {
-      if (!resolvedEventId) resolvedEventId = String(booking.event);
-      if (!Array.isArray(resolvedSeats) || resolvedSeats.length === 0) {
-        resolvedSeats = booking.selectedSeats;
-      }
-    }
+  const booking = await Booking.findOne({ _id: bookingId, user: req.user._id });
+  if (!booking) throw new ApiError(404, "Booking not found");
+
+  // Idempotent: a page refresh or retry after success just returns the ticket
+  if (booking.status === "confirmed") {
+    return res.status(200).json(
+      new ApiResponse(200, { booking, earnedPoints: 0, remainingPoints: req.user.walletPoints }, "Booking already confirmed")
+    );
+  }
+  if (booking.status !== "hold") {
+    throw new ApiError(409, `This booking is ${booking.status} and can no longer be paid.`);
+  }
+  if (booking.holdExpiresAt && booking.holdExpiresAt < new Date()) {
+    await Booking.updateOne({ _id: booking._id, status: "hold" }, { status: "expired", paymentstatus: "cancelled" });
+    throw new ApiError(409, "Your seat hold has expired. Please start the booking again.");
   }
 
-  // Fallback if selectedSeats is still not an array
-  if (!Array.isArray(resolvedSeats) || resolvedSeats.length === 0) {
-    const seatCount = Number(req.body.seatsBooked) || 1;
-    resolvedSeats = Array.from({ length: seatCount }, (_, i) => `Seat-${i + 1}`);
-  }
-
-  const sessionId = stripe_session_id || razorpay_order_id;
-  if (!sessionId || !resolvedEventId) {
-    throw new ApiError(400, "Session ID and event ID are required");
-  }
-
-  const seatsBooked = resolvedSeats.length;
-
-  const event = await Event.findById(resolvedEventId);
+  const event = await Event.findById(booking.event);
   if (!event) throw new ApiError(404, "Event not found");
-
-  // ── LAYER 1: Confirm hold (remove from Redis) ───────────────────────────────
-  await confirmHold(String(resolvedEventId), String(req.user._id), resolvedSeats);
-
-  // ── LAYER 2: Atomic MongoDB seat decrement ──────────────────────────────────
-  // This is the final guard — even if Redis hold somehow failed, this
-  // atomic op prevents overselling at the DB level.
-  await atomicDecrementSeats(resolvedEventId, resolvedSeats);
-
-  // ── Create / update booking as confirmed ───────────────────────────────────
-  const basePrice = ticketPrice || event.Price;
-  const amountPaid = Math.max(0, basePrice * seatsBooked - (discount || 0));
-
-  if (booking) {
-    // Update the pending hold booking to confirmed
-    booking.selectedSeats = resolvedSeats;
-    booking.seatsBooked = seatsBooked;
-    booking.stripeSessionId = sessionId;
-    booking.stripePaymentIntentId = razorpay_payment_id || `pi_${sessionId}`;
-    booking.amountPaid = amountPaid;
-    booking.paymentstatus = "confirmed";
-    booking.status = "confirmed";
-    booking.holdExpiresAt = null;
-    booking.ticketTier = ticketTier || booking.ticketTier || "Standard Pass";
-    booking.ticketPrice = basePrice;
-  } else {
-    // Fallback: create fresh booking (e.g., webhook flow)
-    booking = await Booking.create({
-      user: req.user._id,
-      event: event._id,
-      selectedSeats: resolvedSeats,
-      seatsBooked,
-      ticketTier: ticketTier || "Standard Pass",
-      ticketPrice: basePrice,
-      stripeSessionId: sessionId,
-      stripePaymentIntentId: razorpay_payment_id || `pi_${sessionId}`,
-      amountPaid,
-      paymentstatus: "confirmed",
-      status: "confirmed",
-      holdExpiresAt: null,
-    });
+  if (event.activeStatus !== "active") {
+    throw new ApiError(400, `This event is ${event.activeStatus}. Bookings are not accepted.`);
   }
 
-  // ── Wallet: deduct used points, credit earned points ───────────────────────
+  const paymentFields = await assertPaymentGenuine(booking, req.body);
   const user = await User.findById(req.user._id);
-  if (discount > 0) user.walletPoints = Math.max(0, user.walletPoints - discount);
-  const earnedPoints = Math.floor(amountPaid / 20);
-  user.walletPoints += earnedPoints;
-  await user.save();
+  const result = await confirmBooking(booking, event, user, paymentFields);
 
-  // ── Update event attendees list ─────────────────────────────────────────────
-  const existingAttendee = event.attendees.find(
-    (att) => att.user.toString() === req.user._id.toString()
-  );
-  if (existingAttendee) {
-    existingAttendee.ticketsBooked += seatsBooked;
-  } else {
-    event.attendees.push({ user: req.user._id, ticketsBooked: seatsBooked });
-  }
-  await event.save();
-
-  // ── Verify Razorpay signature if present ──────────────────────────────────
-  if (razorpay_order_id && razorpay_payment_id && req.body.razorpay_signature) {
-    const isSimulated = razorpay_order_id.startsWith("order_sim_");
-    if (!isSimulated && process.env.RAZORPAY_KEY_SECRET && !process.env.RAZORPAY_KEY_SECRET.includes("dummy")) {
-      const generatedSignature = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest("hex");
-      if (generatedSignature !== req.body.razorpay_signature) {
-        throw new ApiError(400, "Invalid Razorpay payment signature verification failed");
-      }
-    }
-  }
-
-  // ── Generate QR code ────────────────────────────────────────────────────────
-  booking = await generateSecureQRCode(booking);
-  if (razorpay_order_id) {
-    booking.razorpayOrderId = razorpay_order_id;
-    booking.razorpayPaymentId = razorpay_payment_id;
-    booking.razorpaySignature = req.body.razorpay_signature;
-  }
-  await booking.save();
-
-  // ── Email Confirmation Dispatch ──────────────────────────────────────────
-  sendTicketConfirmationEmail({ user, event, booking }).catch((emailErr) => {
-    console.warn("⚠️ Ticket email dispatch error:", emailErr.message);
-  });
-
-  // ── LAYER 3: Broadcast final seat count ─────────────────────────────────────
-  await emitSeatUpdate(resolvedEventId);
-
-  res.status(201).json(
-    new ApiResponse(201, { booking, earnedPoints, remainingPoints: user.walletPoints },
-      "Booking confirmed successfully")
-  );
+  res.status(201).json(new ApiResponse(201, result, "Booking confirmed successfully"));
 });
 
 // ─── cancelBooking ────────────────────────────────────────────────────────────
 const cancelBooking = asyncHandler(async (req, res) => {
-  const booking = await Booking.findById(req.params.bookingid).populate("event");
-  if (!booking) throw new ApiError(404, "Booking not found");
+  if (!mongoose.isValidObjectId(req.params.bookingid)) throw new ApiError(400, "Invalid booking ID");
 
-  if (booking.user.toString() !== req.user._id.toString()) {
+  const existing = await Booking.findById(req.params.bookingid).select("user checkedIn status");
+  if (!existing) throw new ApiError(404, "Booking not found");
+  if (existing.user.toString() !== req.user._id.toString()) {
     throw new ApiError(403, "You are not authorized to cancel this booking");
   }
+  if (existing.checkedIn) throw new ApiError(400, "Checked-in tickets cannot be cancelled");
 
-  if (booking.status === "cancelled" || booking.paymentstatus === "cancelled") {
-    throw new ApiError(400, "Booking is already cancelled");
-  }
+  // Atomic claim: only one concurrent request can move the booking to "cancelled"
+  const previous = await Booking.findOneAndUpdate(
+    { _id: existing._id, status: { $in: ["hold", "confirmed"] }, checkedIn: { $ne: true } },
+    { $set: { paymentstatus: "cancelled", status: "cancelled", cancelDate: new Date() } },
+    { new: false }
+  );
+  if (!previous) throw new ApiError(400, "Booking is already cancelled or can no longer be cancelled");
 
-  const eventId = booking.event?._id || booking.event;
-  const wasConfirmed = booking.status === "confirmed" || booking.paymentstatus === "confirmed";
+  const eventId = previous.event;
+  const wasConfirmed = previous.status === "confirmed";
 
-  // ── Cancel the booking ──────────────────────────────────────────────────────
-  booking.paymentstatus = "cancelled";
-  booking.status = "cancelled";
-  booking.cancelDate = new Date();
-  await booking.save();
+  await releaseHold(String(eventId), String(req.user._id), previous.selectedSeats);
 
-  // ── Release Redis hold (if still active) ───────────────────────────────────
-  await releaseHold(String(eventId), String(req.user._id), booking.selectedSeats);
-
-  // ── Restore seats in MongoDB (only if booking was confirmed) ────────────────
+  let refundStatus = "none";
   if (wasConfirmed) {
-    await atomicRestoreSeats(eventId, booking.selectedSeats);
-  }
+    await atomicRestoreSeats(eventId, previous.selectedSeats);
 
-  // ── LAYER 3: Broadcast restored seat count ─────────────────────────────────
-  await emitSeatUpdate(eventId);
+    // Wallet: give back points spent on this booking and take back points it earned
+    const earned = Math.floor((previous.amountPaid || 0) / 20);
+    const user = await User.findById(previous.user);
+    if (user) {
+      user.walletPoints = Math.max(0, user.walletPoints + (previous.pointsUsed || 0) - earned);
+      await user.save();
+    }
 
-  // ── Razorpay refund (if applicable) ────────────────────────────────────────
-  if (booking.razorpayPaymentId) {
     try {
-      const Razorpay = (await import("razorpay")).default;
-      const razorpay = new Razorpay({
-        key_id: process.env.RAZORPAY_KEY_ID,
-        key_secret: process.env.RAZORPAY_KEY_SECRET,
-      });
-      const refund = await razorpay.payments.refund(booking.razorpayPaymentId, {
-        amount: booking.amountPaid * 100,
-      });
-      console.log("Refund initiated:", refund);
+      const result = await refundBooking(previous);
+      refundStatus = result === "refunded" ? "refunded" : "none";
+      if (refundStatus === "refunded") {
+        await Booking.updateOne({ _id: previous._id }, { refundStatus: "refunded" });
+      }
     } catch (err) {
-      console.error("Refund failed (non-blocking):", err.message);
+      refundStatus = "failed";
+      console.error("Refund failed (needs manual follow-up):", String(previous._id), err.message);
+      await Booking.updateOne(
+        { _id: previous._id },
+        { refundStatus: "failed", refundError: String(err.message).slice(0, 300) }
+      );
     }
   }
 
-  res.status(200).json(new ApiResponse(200, booking, "Booking cancelled and seats restored"));
+  await emitSeatUpdate(eventId);
+
+  const updated = await Booking.findById(previous._id);
+  const message =
+    refundStatus === "failed"
+      ? "Booking cancelled, but the refund failed and needs manual follow-up."
+      : "Booking cancelled and seats restored";
+  res.status(200).json(new ApiResponse(200, updated, message));
 });
 
 // ─── getMyBookings ─────────────────────────────────────────────────────────────

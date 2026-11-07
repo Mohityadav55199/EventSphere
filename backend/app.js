@@ -12,6 +12,7 @@ import bookingRouter from "./routes/booking.router.js";
 import reviewRouter from "./routes/review.router.js";
 import chatRouter from "./routes/chat.router.js";
 import contactRouter from "./routes/contact.router.js";
+import { corsOriginCheck } from "./config/cors.js";
 
 const app = express();
 
@@ -47,7 +48,7 @@ app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
 // Dynamic CORS configuration allowing credentials for Vercel & localhost with 24h preflight cache
 app.use(cors({
-    origin: true,
+    origin: corsOriginCheck,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import { DB_NAME } from "../constant.js";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 
 /**
  * Fallback SRV resolution via system nslookup
@@ -8,16 +8,21 @@ import { execSync } from "node:child_process";
  */
 function resolveSrvViaNslookup(host) {
   try {
-    const output = execSync(`nslookup -type=SRV _mongodb._tcp.${host}`, {
+    const output = execFileSync("nslookup", ["-type=SRV", `_mongodb._tcp.${host}`], {
       encoding: "utf8",
       timeout: 5000,
       stdio: ["pipe", "pipe", "ignore"],
     });
     const hosts = [];
-    const regex = /svr hostname\s*=\s*([^\s]+)/gi;
+    // Windows prints "svr hostname = host", Linux/macOS print "service = 0 0 27017 host."
+    const winRegex = /svr hostname\s*=\s*([^\s]+)/gi;
+    const unixRegex = /service\s*=\s*\d+\s+\d+\s+(\d+)\s+([^\s]+?)\.?\s*$/gim;
     let m;
-    while ((m = regex.exec(output)) !== null) {
-      hosts.push(`${m[1]}:27017`);
+    while ((m = winRegex.exec(output)) !== null) {
+      hosts.push(`${m[1].replace(/\.$/, "")}:27017`);
+    }
+    while ((m = unixRegex.exec(output)) !== null) {
+      hosts.push(`${m[2]}:${m[1]}`);
     }
     return hosts;
   } catch {

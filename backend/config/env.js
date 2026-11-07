@@ -19,7 +19,12 @@ const RECOMMENDED = [
 const isSet = (key) => Boolean(process.env[key] && process.env[key].trim());
 
 export function validateEnv() {
-  const missing = REQUIRED.filter(({ keys }) => !keys.some(isSet));
+  const required = [...REQUIRED];
+  // Signing key for ticket QR codes: there is no safe default in production
+  if (process.env.NODE_ENV === "production") {
+    required.push({ keys: ["QR_SECRET"], hint: "secret used to sign ticket QR codes" });
+  }
+  const missing = required.filter(({ keys }) => !keys.some(isSet));
   if (missing.length) {
     console.error("🚨 Missing required environment variables:");
     for (const { keys, hint } of missing) {
