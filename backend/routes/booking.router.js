@@ -11,6 +11,7 @@ import {
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import authorizeRoles from "../middlewares/role.middleware.js";
 import qrScanMiddleware from "../middlewares/qrScan.middleware.js";
+import { bookingLimiter } from "../middlewares/rateLimit.middleware.js";
 import validate from "../middlewares/validate.middleware.js";
 import { eventIdParam } from "../validators/schemas.js";
 
@@ -20,12 +21,12 @@ const bookingRouter = Router();
 bookingRouter.get("/seat-availability/:eventId", validate(eventIdParam, "params"), getSeatAvailability);
 
 // ── Booking flow ──────────────────────────────────────────────────────────────
-bookingRouter.post("/create-order/:eventId", authMiddleware, validate(eventIdParam, "params"), createOrder);
-bookingRouter.post("/verify-payment", authMiddleware, verifyPayment);
+bookingRouter.post("/create-order/:eventId", authMiddleware, bookingLimiter, validate(eventIdParam, "params"), createOrder);
+bookingRouter.post("/verify-payment", authMiddleware, bookingLimiter, verifyPayment);
 
 // ── User routes ───────────────────────────────────────────────────────────────
 bookingRouter.get("/my-bookings", authMiddleware, getMyBookings);
-bookingRouter.delete("/cancel-booking/:bookingid", authMiddleware, cancelBooking);
+bookingRouter.delete("/cancel-booking/:bookingid", authMiddleware, bookingLimiter, cancelBooking);
 
 // ── Admin routes ──────────────────────────────────────────────────────────────
 bookingRouter.get("/admin/all-bookings", authMiddleware, authorizeRoles("admin"), getAllBookings);
@@ -37,4 +38,4 @@ bookingRouter.get("/organizer/event-bookings/:eventId", authMiddleware, authoriz
 // ── Check-in (QR scan) ────────────────────────────────────────────────────────
 bookingRouter.post("/checkin", authMiddleware, authorizeRoles("organizer", "admin"), qrScanMiddleware);
 
-export default bookingRouter;
+export default bookingRouter;

@@ -4,7 +4,7 @@ import cors from "cors";
 import helmet from "helmet";
 import { getRedisClient } from "./utils/redisClient.js";
 import cookieParser from "cookie-parser";
-import { rateLimit, ipKeyGenerator } from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import userRouter from "./routes/user.routes.js";
 import eventRouter from "./routes/event.routes.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
@@ -12,6 +12,7 @@ import bookingRouter from "./routes/booking.router.js";
 import reviewRouter from "./routes/review.router.js";
 import chatRouter from "./routes/chat.router.js";
 import contactRouter from "./routes/contact.router.js";
+import webhookRouter from "./routes/webhook.router.js";
 import { corsOriginCheck } from "./config/cors.js";
 
 const app = express();
@@ -21,26 +22,13 @@ const app = express();
 app.set("trust proxy", 1);
 
 // General rate limiter for auth endpoints
+const isTestEnv = process.env.NODE_ENV === "test"; // integration tests fire hundreds of requests from one IP
+
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     max: 100,
+    skip: () => isTestEnv,
     message: { success: false, message: "Too many requests from this IP, please try again after 15 minutes." }
-});
-
-// Strict booking limiter — prevents seat hold spam (BookMyShow-style abuse prevention).
-// 5 booking attempts per minute per IP is generous for real users but blocks bots.
-const bookingLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute window
-    max: 5,              // 5 booking mutations per minute per IP
-    keyGenerator: (req, res) => {
-        // Use ipKeyGenerator to correctly handle IPv6 and avoid ERR_ERL_KEY_GEN_IPV6
-        return ipKeyGenerator(req, res) + (req.user?._id || "");
-    },
-    message: {
-        success: false,
-        message: "Too many booking attempts. Please wait a moment before trying again."
-    },
-    skip: (req) => req.method === "GET", // seat availability GETs are not rate-limited
 });
 
 // Security headers. Cross-origin resource policy is relaxed because the Vercel frontend loads assets from this API.
@@ -54,6 +42,9 @@ app.use(cors({
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     maxAge: 86400
 }));
+
+// Gateway webhooks need the raw body for signature checks, so they are mounted before express.json()
+app.use("/api/v1/webhooks", webhookRouter);
 
 app.use(express.json({ limit: "16kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
@@ -107,7 +98,7 @@ app.get("/health", async (req, res) => {
 
 app.use('/api/v1/users', authLimiter, userRouter);
 app.use('/api/v1/events', eventRouter);
-app.use('/api/v1/bookings', bookingLimiter, bookingRouter);
+app.use('/api/v1/bookings', bookingRouter);
 app.use('/api/v1/reviews', reviewRouter);
 app.use('/api/v1/chat', chatRouter);
 app.use('/api/v1/contacts', contactRouter);
