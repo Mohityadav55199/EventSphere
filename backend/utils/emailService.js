@@ -11,6 +11,11 @@ let transporter = null;
 
 async function getTransporter() {
   if (transporter) return transporter;
+  // Tests must never reach the network (no SMTP, no Ethereal account creation)
+  if (process.env.NODE_ENV === "test") {
+    transporter = nodemailer.createTransport({ jsonTransport: true });
+    return transporter;
+  }
 
   const host = process.env.SMTP_HOST;
   const user = process.env.SMTP_USER || process.env.EMAIL_USER;

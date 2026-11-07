@@ -23,6 +23,7 @@ const inMemoryClient = {
         inMemoryStore.delete(key);
         inMemoryExpiry.delete(key);
       }, options.ex * 1000);
+      timer.unref?.(); // a pending hold expiry must never keep the process alive
       inMemoryExpiry.set(key, timer);
     }
     return "OK";
@@ -106,9 +107,19 @@ function makeIoRedisAdapter(ioRedisClient) {
 
 // ── Singleton ─────────────────────────────────────────────────────────────────
 let _client = null;
+let _initPromise = null;
 
-async function getRedisClient() {
-  if (_client) return _client;
+// Concurrent first callers (e.g. a burst of bookings right after a cold start) all share one
+// connection attempt instead of each running their own probe.
+function getRedisClient() {
+  if (_client) return Promise.resolve(_client);
+  if (!_initPromise) {
+    _initPromise = initRedisClient().finally(() => { _initPromise = null; });
+  }
+  return _initPromise;
+}
+
+async function initRedisClient() {
 
   const upstashUrl   = process.env.UPSTASH_REDIS_REST_URL;
   const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;

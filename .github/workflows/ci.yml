@@ -20,6 +20,11 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      # Integration tests start an in-memory MongoDB; cache its binary so CI does not re-download it
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-memory-server-${{ runner.os }}-${{ hashFiles('backend/package-lock.json') }}
       - run: npm test
 
   frontend-build:
