@@ -488,7 +488,19 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
   const paymentFields = await assertPaymentGenuine(booking, req.body);
   const user = await User.findById(req.user._id);
-  const result = await confirmBooking(booking, event, user, paymentFields);
+  let result;
+  try {
+    result = await confirmBooking(booking, event, user, paymentFields);
+  } catch (err) {
+    // The Stripe webhook may have confirmed this booking a moment ago: that is a success, not an error
+    const latest = await Booking.findById(booking._id);
+    if (err.statusCode === 409 && latest?.status === "confirmed") {
+      return res.status(200).json(
+        new ApiResponse(200, { booking: latest, earnedPoints: 0, remainingPoints: user.walletPoints }, "Booking already confirmed")
+      );
+    }
+    throw err;
+  }
 
   res.status(201).json(new ApiResponse(201, result, "Booking confirmed successfully"));
 });
@@ -613,6 +625,7 @@ const getSeatAvailability = asyncHandler(async (req, res) => {
 });
 
 export {
+  confirmBooking,
   createOrder,
   verifyPayment,
   getMyBookings,
