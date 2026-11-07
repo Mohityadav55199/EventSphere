@@ -25,7 +25,14 @@ for (const key of ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN", "REDIS_
 let mongod;
 
 export async function startTestApp() {
-  mongod = await MongoMemoryServer.create();
+  // Every test file starts its own mongod at the same time; on a busy machine one can occasionally
+  // fail to boot (port race / startup timeout), so retry once and report why on stderr.
+  try {
+    mongod = await MongoMemoryServer.create();
+  } catch (err) {
+    process.stderr.write(`mongodb-memory-server failed to start (${err.message}); retrying once\n`);
+    mongod = await MongoMemoryServer.create();
+  }
   await mongoose.connect(mongod.getUri(), { dbName: "eventsphere_test" });
   const { default: app } = await import("../../app.js");
   const models = {

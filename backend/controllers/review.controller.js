@@ -24,10 +24,14 @@ const createReview = asyncHandler(async (req, res) => {
   const booking = await Booking.findOne({
     event: eventId,
     user: req.user._id,
-    paymentstatus: "confirmed"
+    status: "confirmed"
   });
   if (!booking) {
     throw new ApiError(403, "You must have attended the event to review");
+  }
+
+  if (await Review.exists({ user: req.user._id, event: eventId })) {
+    throw new ApiError(409, "You have already reviewed this event. Edit your existing review instead.");
   }
 
   // Save review
@@ -85,8 +89,8 @@ const deleteReview = asyncHandler( async (req, res) => {
   const review = await Review.findById(reviewId);
   if (!review) throw new ApiError(404, "Review not found");      
 
-  // Check if review belongs to user
-  if (review.user.toString() !== req.user._id.toString()) {
+  // Authors can delete their own review; admins can remove any (moderation)
+  if (review.user.toString() !== req.user._id.toString() && req.user.role !== "admin") {
     throw new ApiError(403, "You are not authorized to delete this review");
   }
 

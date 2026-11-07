@@ -15,13 +15,12 @@ cloudinary.config({
 const uploadOnCloudinary = (fileBuffer) => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
-      { resource_type: "auto" },
+      { resource_type: "image" },
       (error, result) => {
         if (error) {
           console.error("Cloudinary upload error:", error);
           reject(error);
         } else {
-          console.log("File uploaded on Cloudinary:", result.url);
           resolve(result);
         }
       }
@@ -30,16 +29,35 @@ const uploadOnCloudinary = (fileBuffer) => {
   });
 };
 
-    const deleteFromCloudinary = async(oldfileUrl)=>{
-       try {
-         if(oldfileUrl){
-             await cloudinary.uploader.destroy(oldfileUrl)
-            //  console.log(`Deleted image with public ID: ${publicId}`);
-         }
-       } catch (error) {
-        console.error(`Error deleting image: ${error}`);
-       }
-    };
-   
+/**
+ * Cloudinary deletes by public_id, not by URL.
+ *   https://res.cloudinary.com/demo/image/upload/v1712345678/folder/poster.jpg  ->  "folder/poster"
+ * Returns null for anything that isn't a Cloudinary upload URL (e.g. seeded Unsplash images).
+ */
+const publicIdFromUrl = (url) => {
+  if (typeof url !== "string" || !url.includes("res.cloudinary.com")) return null;
+  const afterUpload = url.split(/[?#]/)[0].split("/upload/")[1];
+  if (!afterUpload) return null;
+  let parts = afterUpload.split("/");
+  const versionAt = parts.findIndex((p) => /^v\d+$/.test(p));
+  if (versionAt !== -1) {
+    parts = parts.slice(versionAt + 1); // everything before the version is transformations
+  } else {
+    while (parts.length > 1 && /^[a-z]{1,3}_[^/]*$|,/.test(parts[0])) parts.shift(); // e.g. "c_fill,w_300"
+  }
+  const id = parts.join("/").replace(/\.[a-z0-9]+$/i, "");
+  return id ? decodeURIComponent(id) : null;
+};
 
-export {uploadOnCloudinary,deleteFromCloudinary}
+const deleteFromCloudinary = async (fileUrl) => {
+  const publicId = publicIdFromUrl(fileUrl);
+  if (!publicId) return;
+  try {
+    await cloudinary.uploader.destroy(publicId, { resource_type: "image" });
+  } catch (error) {
+    // Never fail the request just because an old image could not be cleaned up
+    console.error(`Error deleting image ${publicId}:`, error.message);
+  }
+};
+
+export { uploadOnCloudinary, deleteFromCloudinary, publicIdFromUrl };

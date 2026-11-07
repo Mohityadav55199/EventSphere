@@ -10,10 +10,10 @@ export const createContact = asyncHandler(async (req, res) => {
   if (!name || !email || !subject || !message) {
     throw new ApiError(400, "All fields are required");
   }
-  const proofImagePath = req.file.buffer;
+  // The screenshot is optional; a message without one must still go through
   let image = null;
-  if(proofImagePath){
-      image = await uploadOnCloudinary(proofImagePath) || null
+  if (req.file?.buffer) {
+    image = (await uploadOnCloudinary(req.file.buffer)) || null;
   }
 
   const contact = await Contact.create({ 
