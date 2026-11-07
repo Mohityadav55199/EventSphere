@@ -316,7 +316,9 @@ const createOrder = asyncHandler(async (req, res) => {
     }
 
     // ── International Gateway: Stripe (Apple Pay, Google Pay, Cards) ──────────
-    const clientUrl = process.env.CLIENT_URL || "http://localhost:5173";
+    // Stripe needs absolute URLs: tolerate a CLIENT_URL set without "https://" or with a trailing slash
+    let clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").split(",")[0].trim().replace(/\/$/, "");
+    if (!/^https?:\/\//i.test(clientUrl)) clientUrl = `https://${clientUrl}`;
     let session;
     try {
       if (!process.env.STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY.includes("dummy")) {
@@ -343,7 +345,8 @@ const createOrder = asyncHandler(async (req, res) => {
         // Only IDs travel in the URL; price, seats and discount are read from the booking server-side
         success_url: `${clientUrl}/profile?session_id={CHECKOUT_SESSION_ID}&booking_id=${pendingBooking._id}&event_id=${eventId}`,
         cancel_url: `${clientUrl}/event/${eventId}`,
-        expires_at: Math.floor(Date.now() / 1000) + DEFAULT_HOLD_SECONDS,
+        // Stripe requires >= 30 min ahead when it receives the request; keep a safety margin over our 30 min hold
+        expires_at: Math.floor(Date.now() / 1000) + DEFAULT_HOLD_SECONDS + 300,
       });
     } catch (err) {
       if (!isSandboxAllowed()) {
